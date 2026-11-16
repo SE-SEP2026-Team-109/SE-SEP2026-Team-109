@@ -16,11 +16,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def register(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
     if db.query(User).filter(User.email == user_in.email).first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    if user_in.username and db.query(User).filter(User.username == user_in.username).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
 
     user = User(
         email=user_in.email,
         password=hash_password(user_in.password),
         urole=user_in.role,
+        username=user_in.username,
+        name=user_in.name,
+        phone=user_in.phone,
     )
     db.add(user)
     db.commit()
