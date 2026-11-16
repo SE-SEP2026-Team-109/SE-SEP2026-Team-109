@@ -30,8 +30,9 @@ function go(e = email.value, p = pw.value) {
   err.value = ''
   if (!emailOk(e)) return (err.value = 'Enter a valid email address.')
   if (!p) return (err.value = 'Enter your password.')
-  const res = login(e, p)
-  if (res.error) return (err.value = res.error)
-  router.push(home(res.user.role))
+  login(e, p).then(res => {
+    if (res.error) return (err.value = res.error)
+    router.push(home(res.user.role))
+  })
 }
 </script>
