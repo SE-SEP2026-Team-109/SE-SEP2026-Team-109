@@ -20,6 +20,16 @@ class UserCreate(BaseModel):
     careergoal: str | None = None
     rollno: str | None = None
     mneeds: str | None = None
+    # required when role is mentor
+    capacity: int | None = None
+    designation: str | None = None
+    company: str | None = None
+    experience: float | None = None
+    bio: str | None = None
+    iitm_program: Course | None = None
+    level_completed: CourseLevel | None = None
+    year_completed: int | None = None
+    still_enrolled: bool | None = None
 
 
 class UserRead(BaseModel):

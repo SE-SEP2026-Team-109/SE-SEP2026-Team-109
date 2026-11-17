@@ -61,10 +61,21 @@ export async function register({ name, email, password, role, extra = {} }) {
   const un = (extra.username || '').trim().toLowerCase()
   if (!usernameOk(un)) return 'Choose a username of 3 to 20 lowercase letters, numbers or underscores.'
   if (usernameTaken(un)) return 'That username is already taken.'
+  const payload = { email: email.trim(), password, role, username: un, name: name.trim(), phone: extra.phone }
+  if (role === 'student') {
+    Object.assign(payload, {
+      rollno: extra.rollNo, courselevel: COURSE_LEVEL_BY_PROGRAMME[extra.programme],
+      course: COURSE_BY_DEGREE[extra.degree], student_type: STUDENT_TYPE_BY_EMPLOYMENT[extra.employment]
+    })
+  } else if (role === 'mentor') {
+    Object.assign(payload, {
+      designation: extra.title, company: extra.company, experience: extra.years, bio: extra.bio,
+      capacity: extra.capacity, level_completed: COURSE_LEVEL_BY_PROGRAMME[extra.completed], year_completed: extra.gradYear
+    })
+  }
   let backendUser
   try {
-    backendUser = await apiRegister({ email: email.trim(), password, role, username: un, name: name.trim(), phone: extra.phone, rollno: extra.rollNo,
-      courselevel: COURSE_LEVEL_BY_PROGRAMME[extra.programme], course: COURSE_BY_DEGREE[extra.degree], student_type: STUDENT_TYPE_BY_EMPLOYMENT[extra.employment] })
+    backendUser = await apiRegister(payload)
   } catch (e) { return e.message || 'Could not create the account.' }
   const base = { id: backendUser.id, role, name: name.trim(), email: email.trim(), password, username: un }
   state.users.push(role === 'student' ? { ...base, programme: '', interests: [], needs: '', skills: [], ...extra, username: un }

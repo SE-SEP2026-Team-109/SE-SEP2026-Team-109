@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user
 from app.core.security import create_access_token, hash_password, verify_password
 from app.database import get_db
-from app.models.user import Student, User, UserRole
+from app.models.enums import Course, CourseLevel
+from app.models.user import Mentor, Student, User, UserRole
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, UserRead
 
@@ -20,6 +21,8 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
     if user_in.role == UserRole.student and user_in.course is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Course is required for students")
+    if user_in.role == UserRole.mentor and user_in.capacity is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Capacity is required for mentors")
 
     user = User(
         email=user_in.email,
@@ -42,6 +45,21 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
                 careergoal=user_in.careergoal,
                 rollno=user_in.rollno,
                 mneeds=user_in.mneeds,
+            )
+        )
+    if user_in.role == UserRole.mentor:
+        db.add(
+            Mentor(
+                id=user.id,
+                iitm_program=user_in.iitm_program or Course.data_science_and_applications,
+                level_completed=user_in.level_completed or CourseLevel.bsc_degree,
+                year_completed=user_in.year_completed,
+                designation=user_in.designation,
+                still_enrolled=user_in.still_enrolled,
+                bio=user_in.bio,
+                company=user_in.company,
+                experience=user_in.experience,
+                capacity=user_in.capacity,
             )
         )
 
