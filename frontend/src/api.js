@@ -6,11 +6,14 @@ async function parseError(res) {
   return body.detail || `Request failed (${res.status})`
 }
 
-export async function apiRegister({ email, password, role, username, name, phone }) {
+export async function apiRegister({ email, password, role, username, name, phone, course, courselevel, student_type, rollno }) {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, role, username: username || null, name: name || null, phone: phone || null })
+    body: JSON.stringify({
+      email, password, role, username: username || null, name: name || null, phone: phone || null,
+      course: course || null, courselevel: courselevel || null, student_type: student_type || undefined, rollno: rollno || null
+    })
   })
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()

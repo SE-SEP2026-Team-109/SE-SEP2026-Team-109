@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models.enums import UserStatus
+from app.models.enums import Course, CourseLevel, StudentType, UserStatus
 from app.models.user import UserRole
 
 
@@ -13,6 +13,13 @@ class UserCreate(BaseModel):
     username: str | None = None
     name: str | None = None
     phone: str | None = None
+    # required when role is student
+    course: Course | None = None
+    courselevel: CourseLevel | None = None
+    student_type: StudentType = StudentType.standalone
+    careergoal: str | None = None
+    rollno: str | None = None
+    mneeds: str | None = None
 
 
 class UserRead(BaseModel):

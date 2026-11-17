@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import { seed } from '../data/mock'
 import { apiLogin, apiMe, apiRegister } from '../api'
+import { COURSE_BY_DEGREE, COURSE_LEVEL_BY_PROGRAMME, STUDENT_TYPE_BY_EMPLOYMENT } from '../utils/helpers'
 const KEY = 'mentorconnect_demo_v4'
 const TOKEN_KEY = 'mentorconnect_token'
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.users && s.sessions) return s } catch (e) { /* ignore corrupt data */ } return seed() }
@@ -62,7 +63,8 @@ export async function register({ name, email, password, role, extra = {} }) {
   if (usernameTaken(un)) return 'That username is already taken.'
   let backendUser
   try {
-    backendUser = await apiRegister({ email: email.trim(), password, role, username: un, name: name.trim(), phone: extra.phone })
+    backendUser = await apiRegister({ email: email.trim(), password, role, username: un, name: name.trim(), phone: extra.phone, rollno: extra.rollNo,
+      courselevel: COURSE_LEVEL_BY_PROGRAMME[extra.programme], course: COURSE_BY_DEGREE[extra.degree], student_type: STUDENT_TYPE_BY_EMPLOYMENT[extra.employment] })
   } catch (e) { return e.message || 'Could not create the account.' }
   const base = { id: backendUser.id, role, name: name.trim(), email: email.trim(), password, username: un }
   state.users.push(role === 'student' ? { ...base, programme: '', interests: [], needs: '', skills: [], ...extra, username: un }

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user
 from app.core.security import create_access_token, hash_password, verify_password
 from app.database import get_db
-from app.models.user import User
+from app.models.user import Student, User, UserRole
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, UserRead
 
@@ -18,6 +18,8 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     if user_in.username and db.query(User).filter(User.username == user_in.username).first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
+    if user_in.role == UserRole.student and user_in.course is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Course is required for students")
 
     user = User(
         email=user_in.email,
@@ -28,6 +30,21 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
         phone=user_in.phone,
     )
     db.add(user)
+    db.flush()
+
+    if user_in.role == UserRole.student:
+        db.add(
+            Student(
+                id=user.id,
+                course=user_in.course,
+                courselevel=user_in.courselevel,
+                type=user_in.student_type,
+                careergoal=user_in.careergoal,
+                rollno=user_in.rollno,
+                mneeds=user_in.mneeds,
+            )
+        )
+
     db.commit()
     db.refresh(user)
     return user

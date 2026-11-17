@@ -64,10 +64,11 @@ class Student(Base):
     __tablename__ = "student"
 
     id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
-    course: Mapped[Course] = mapped_column(SAEnum(Course), nullable=False)
+    course: Mapped[Course] = mapped_column(SAEnum(Course))
     courselevel: Mapped[CourseLevel | None] = mapped_column(SAEnum(CourseLevel))
     type: Mapped[StudentType] = mapped_column(SAEnum(StudentType), nullable=False, default=StudentType.standalone)
     careergoal: Mapped[str | None] = mapped_column(Text)
+    rollno: Mapped[str | None] = mapped_column(Text)
     mneeds: Mapped[str | None] = mapped_column(Text)
 
     user: Mapped["User"] = relationship(back_populates="student")
