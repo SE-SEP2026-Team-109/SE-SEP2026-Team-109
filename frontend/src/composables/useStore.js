@@ -1,6 +1,9 @@
 import { reactive, watch } from 'vue'
 import { seed } from '../data/mock'
+import { apiLogin, apiMe, apiRegister } from '../api'
+import { COURSE_BY_DEGREE, COURSE_LEVEL_BY_PROGRAMME, STUDENT_TYPE_BY_EMPLOYMENT } from '../utils/helpers'
 const KEY = 'mentorconnect_demo_v4'
+const TOKEN_KEY = 'mentorconnect_token'
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.users && s.sessions) return s } catch (e) { /* ignore corrupt data */ } return seed() }
 export const state = reactive(load())
 watch(state, () => { try { localStorage.setItem(KEY, JSON.stringify(state)) } catch (e) { /* storage unavailable */ } }, { deep: true })
@@ -28,20 +31,53 @@ export const aliasOf = id => 'Student #' + (state.users.filter(u => u.role === '
 export const relayEmail = id => 'student-' + [...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7).toString(36) + '@relay.mentorconnect.demo'
 export const fmtDT = t => new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 
-/* ---------- accounts ---------- */
-export function login(email, password) {
-  const u = state.users.find(x => x.email.toLowerCase() === email.trim().toLowerCase())
-  if (!u || u.purged || u.password !== password) return { error: 'Email or password is incorrect.' }
-  if (u.active === false) return { error: u.deletionRequestedAt ? 'This account is scheduled for deletion.' : 'This account has been deactivated. Contact the programme admin.' }
-  state.sessionId = u.id; return { user: u }
+/* ---------- accounts ----------
+   Identity (email/password/role) is authenticated against the FastAPI backend;
+   the rest of the profile fields stay in the local mock store for the demo UI. */
+function syncLocalUser(backendUser) {
+  let u = state.users.find(x => x.id === backendUser.id)
+  if (!u) {
+    const defaults = backendUser.role === 'student' ? { programme: '', interests: [], needs: '', skills: [] }
+      : backendUser.role === 'mentor' ? { title: '', company: '', years: 0, industry: '', bio: '', expertise: [], support: [], capacity: 2, paused: false, verified: false }
+        : {}
+    u = { id: backendUser.id, role: backendUser.role, ...defaults }
+    state.users.push(u)
+  }
+  Object.assign(u, { role: backendUser.role, name: backendUser.name || u.name || backendUser.email, email: backendUser.email, username: backendUser.username || u.username || '' })
+  return u
 }
-export const logout = () => { state.sessionId = null }
-export function register({ name, email, password, role, extra = {} }) {
-  if (state.users.some(u => u.email.toLowerCase() === email.trim().toLowerCase())) return 'An account with this email already exists.'
+export async function login(email, password) {
+  try {
+    const { access_token } = await apiLogin(email.trim(), password)
+    localStorage.setItem(TOKEN_KEY, access_token)
+    const backendUser = await apiMe(access_token)
+    const u = syncLocalUser(backendUser)
+    if (u.active === false) return { error: u.deletionRequestedAt ? 'This account is scheduled for deletion.' : 'This account has been deactivated. Contact the programme admin.' }
+    state.sessionId = u.id; return { user: u }
+  } catch (e) { return { error: e.message || 'Email or password is incorrect.' } }
+}
+export const logout = () => { state.sessionId = null; localStorage.removeItem(TOKEN_KEY) }
+export async function register({ name, email, password, role, extra = {} }) {
   const un = (extra.username || '').trim().toLowerCase()
   if (!usernameOk(un)) return 'Choose a username of 3 to 20 lowercase letters, numbers or underscores.'
   if (usernameTaken(un)) return 'That username is already taken.'
-  const base = { id: uid(role[0]), role, name: name.trim(), email: email.trim(), password, username: un }
+  const payload = { email: email.trim(), password, role, username: un, name: name.trim(), phone: extra.phone }
+  if (role === 'student') {
+    Object.assign(payload, {
+      rollno: extra.rollNo, courselevel: COURSE_LEVEL_BY_PROGRAMME[extra.programme],
+      course: COURSE_BY_DEGREE[extra.degree], student_type: STUDENT_TYPE_BY_EMPLOYMENT[extra.employment]
+    })
+  } else if (role === 'mentor') {
+    Object.assign(payload, {
+      designation: extra.title, company: extra.company, experience: extra.years, bio: extra.bio,
+      capacity: extra.capacity, level_completed: COURSE_LEVEL_BY_PROGRAMME[extra.completed], year_completed: extra.gradYear
+    })
+  }
+  let backendUser
+  try {
+    backendUser = await apiRegister(payload)
+  } catch (e) { return e.message || 'Could not create the account.' }
+  const base = { id: backendUser.id, role, name: name.trim(), email: email.trim(), password, username: un }
   state.users.push(role === 'student' ? { ...base, programme: '', interests: [], needs: '', skills: [], ...extra, username: un }
     : { ...base, title: '', company: '', years: 0, industry: '', bio: '', expertise: [], support: [], capacity: 2, paused: false, verified: false, ...extra, username: un })
   if (role === 'mentor') state.users.filter(u => u.role === 'admin').forEach(a => notify(a.id, `New mentor ${name.trim()} is waiting for verification`, '/admin/dashboard?tab=users'))
