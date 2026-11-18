@@ -26,7 +26,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str | None] = mapped_column(String(100), unique=True, index=True)
     name: Mapped[str | None] = mapped_column(String(150))
-    urole: Mapped[UserRole] = mapped_column(SAEnum(UserRole), nullable=False, default=UserRole.student)
+    # Python attribute is `role`; the underlying column stays `urole` to match the project's DBML schema.
+    role: Mapped[UserRole] = mapped_column("urole", SAEnum(UserRole), nullable=False, default=UserRole.student)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     password: Mapped[str] = mapped_column(String(255), nullable=False)  # stores the hashed password
     phone: Mapped[str | None] = mapped_column(String(30))
@@ -49,11 +50,6 @@ class User(Base):
     assigned_requests: Mapped[list["Request"]] = relationship(
         back_populates="assigned_by_user", foreign_keys="Request.assigned_by"
     )
-
-    @property
-    def role(self) -> UserRole:
-        """Alias kept for the auth module, which predates the `urole` column name."""
-        return self.urole
 
     @property
     def is_active(self) -> bool:

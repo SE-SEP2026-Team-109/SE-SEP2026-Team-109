@@ -21,7 +21,7 @@ def seed_demo_users(db: Session) -> None:
             User(
                 email=data["email"],
                 password=hash_password(DEMO_PASSWORD),
-                urole=data["role"],
+                role=data["role"],
                 username=data["username"],
                 name=data["name"],
             )
