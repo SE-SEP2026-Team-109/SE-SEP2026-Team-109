@@ -1,7 +1,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 
 from app.models.enums import (
     Course,
@@ -55,3 +55,39 @@ class ProfileRead(BaseModel):
     mentor: MentorProfileRead | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StudentProfileUpdate(BaseModel):
+    course: Course | None = None
+    courselevel: CourseLevel | None = None
+    type: StudentType | None = None
+    careergoal: str | None = None
+    rollno: str | None = None
+    mneeds: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MentorProfileUpdate(BaseModel):
+    iitm_program: Course | None = None
+    level_completed: CourseLevel | None = None
+    year_completed: int | None = None
+    designation: str | None = None
+    still_enrolled: bool | None = None
+    bio: str | None = None
+    company: str | None = None
+    experience: float | None = Field(default=None, ge=0)
+    capacity: int | None = Field(default=None, ge=0, le=10)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProfileUpdate(BaseModel):
+    username: str | None = Field(default=None, max_length=100)
+    name: str | None = Field(default=None, max_length=150)
+    phone: str | None = Field(default=None, max_length=30)
+
+    student: StudentProfileUpdate | None = None
+    mentor: MentorProfileUpdate | None = None
+
+    model_config = ConfigDict(extra="forbid")
