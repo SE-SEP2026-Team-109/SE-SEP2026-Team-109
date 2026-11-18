@@ -29,7 +29,7 @@ You need Python 3.10+ and Node.js 18+. Open two terminals.
 cd backend
 python3 -m venv venv && source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python app.py                                        # http://127.0.0.1:5000
+uvicorn app.main:app --reload
 ```
 
 **2. Frontend**
