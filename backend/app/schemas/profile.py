@@ -111,3 +111,16 @@ class MentorPublicProfileRead(BaseModel):
     pause: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StudentProfileCardRead(BaseModel):
+    id: int
+    name: str | None
+    photo: str | None
+    course: Course
+    courselevel: CourseLevel | None
+    type: StudentType
+    careergoal: str | None
+    mneeds: str | None
+
+    model_config = ConfigDict(from_attributes=True)

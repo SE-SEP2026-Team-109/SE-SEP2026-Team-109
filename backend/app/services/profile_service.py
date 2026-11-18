@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.user import VerificationStatus
-from app.models.user import User, UserRole, Mentor
+from app.models.user import User, UserRole, Mentor, Student
 from app.schemas.profile import ProfileUpdate
 
 def get_user_profile(db: Session, user_id: int) -> User | None:
@@ -77,6 +77,20 @@ def get_public_mentor_profile(db: Session, mentor_id: int) -> User | None:
             User.id == mentor_id,
             User.role == UserRole.mentor,
             Mentor.veri_status == VerificationStatus.verified,
+        )
+        .first()
+    )
+
+
+def get_student_profile_card(db: Session, student_id: int) -> User | None:
+    """Retrieve a student's profile for mentor review."""
+
+    return (
+        db.query(User)
+        .join(Student, Student.id == User.id)
+        .filter(
+            User.id == student_id,
+            User.role == UserRole.student,
         )
         .first()
     )
