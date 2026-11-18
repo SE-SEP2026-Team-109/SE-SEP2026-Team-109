@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user
@@ -32,38 +33,45 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> User:
         name=user_in.name,
         phone=user_in.phone,
     )
-    db.add(user)
-    db.flush()
+    try:
+        db.add(user)
+        db.flush()
 
-    if user_in.role == UserRole.student:
-        db.add(
-            Student(
-                id=user.id,
-                course=user_in.course,
-                courselevel=user_in.courselevel,
-                type=user_in.student_type,
-                careergoal=user_in.careergoal,
-                rollno=user_in.rollno,
-                mneeds=user_in.mneeds,
+        if user_in.role == UserRole.student:
+            db.add(
+                Student(
+                    id=user.id,
+                    course=user_in.course,
+                    courselevel=user_in.courselevel,
+                    type=user_in.student_type,
+                    careergoal=user_in.careergoal,
+                    rollno=user_in.rollno,
+                    mneeds=user_in.mneeds,
+                )
             )
-        )
-    if user_in.role == UserRole.mentor:
-        db.add(
-            Mentor(
-                id=user.id,
-                iitm_program=user_in.iitm_program or Course.data_science_and_applications,
-                level_completed=user_in.level_completed or CourseLevel.bsc_degree,
-                year_completed=user_in.year_completed,
-                designation=user_in.designation,
-                still_enrolled=user_in.still_enrolled,
-                bio=user_in.bio,
-                company=user_in.company,
-                experience=user_in.experience,
-                capacity=user_in.capacity,
+        if user_in.role == UserRole.mentor:
+            db.add(
+                Mentor(
+                    id=user.id,
+                    iitm_program=user_in.iitm_program or Course.data_science_and_applications,
+                    level_completed=user_in.level_completed or CourseLevel.bsc_degree,
+                    year_completed=user_in.year_completed,
+                    designation=user_in.designation,
+                    still_enrolled=user_in.still_enrolled,
+                    bio=user_in.bio,
+                    company=user_in.company,
+                    experience=user_in.experience,
+                    capacity=user_in.capacity,
+                )
             )
-        )
 
-    db.commit()
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create the account"
+        ) from None
+
     db.refresh(user)
     return user
 
