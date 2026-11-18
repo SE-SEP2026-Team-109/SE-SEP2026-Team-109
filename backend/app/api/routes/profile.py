@@ -102,6 +102,7 @@ def read_public_mentor_profile(
         "experience": mentor.experience,
         "capacity": mentor.capacity,
         "pause": mentor.pause,
+        "tags": mentor_user.user_tags,
     }
 
 
@@ -144,6 +145,7 @@ def read_student_profile_card(
         "type": student.type,
         "careergoal": student.careergoal,
         "mneeds": student.mneeds,
+        "tags": student_user.user_tags,
     }
 
 

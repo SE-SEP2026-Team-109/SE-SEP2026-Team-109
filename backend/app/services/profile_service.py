@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.user import VerificationStatus
 from app.models.user import User, UserRole, Mentor, Student
 from app.schemas.profile import ProfileUpdate
+from app.models.tags import UserTag
 
 def get_user_profile(db: Session, user_id: int) -> User | None:
     """Retrieves a user with their associated role profiles."""
@@ -73,6 +74,9 @@ def get_public_mentor_profile(db: Session, mentor_id: int) -> User | None:
     return (
         db.query(User)
         .join(Mentor, Mentor.id == User.id)
+        .options(
+            selectinload(User.user_tags).joinedload(UserTag.tag)
+        )
         .filter(
             User.id == mentor_id,
             User.role == UserRole.mentor,
@@ -88,6 +92,9 @@ def get_student_profile_card(db: Session, student_id: int) -> User | None:
     return (
         db.query(User)
         .join(Student, Student.id == User.id)
+        .options(
+            selectinload(User.user_tags).joinedload(UserTag.tag)
+        )
         .filter(
             User.id == student_id,
             User.role == UserRole.student,
