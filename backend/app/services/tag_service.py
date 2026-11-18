@@ -78,3 +78,40 @@ def update_profile_tags(
     except Exception:
         db.rollback()
         raise
+
+
+def suggest_tag(
+    db: Session,
+    name: str,
+    tag_type: TagType,
+) -> Tag:
+    try:
+        existing_tag = (
+            db.query(Tag)
+            .filter(
+                Tag.name.ilike(name),
+                Tag.type == tag_type,
+            )
+            .first()
+        )
+
+        if existing_tag:
+            raise ValueError(
+                "A tag with this name and type already exists or is pending approval"
+            )
+
+        suggestion = Tag(
+            name=name,
+            type=tag_type,
+            t_status=False,
+        )
+
+        db.add(suggestion)
+        db.commit()
+        db.refresh(suggestion)
+
+        return suggestion
+
+    except Exception:
+        db.rollback()
+        raise
