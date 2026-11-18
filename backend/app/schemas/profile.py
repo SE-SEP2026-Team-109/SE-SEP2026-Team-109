@@ -92,3 +92,22 @@ class ProfileUpdate(BaseModel):
     mentor: MentorProfileUpdate | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+
+
+class MentorPublicProfileRead(BaseModel):
+    id: int
+    name: str | None
+    photo: str | None
+
+    iitm_program: Course
+    level_completed: CourseLevel
+    year_completed: int | None
+    designation: str | None
+    bio: str | None
+    company: str | None
+    experience: float | None
+    capacity: int
+    pause: bool
+
+    model_config = ConfigDict(from_attributes=True)

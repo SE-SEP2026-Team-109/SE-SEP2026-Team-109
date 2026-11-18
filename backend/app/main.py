@@ -27,3 +27,4 @@ app.add_middleware(
 app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(profile.router, prefix=settings.api_prefix)
+app.include_router(profile.mentor_router, prefix=settings.api_prefix)

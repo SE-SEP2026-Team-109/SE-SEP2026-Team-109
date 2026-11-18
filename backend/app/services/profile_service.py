@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.user import User, UserRole
+from app.models.user import VerificationStatus
+from app.models.user import User, UserRole, Mentor
 from app.schemas.profile import ProfileUpdate
 
 def get_user_profile(db: Session, user_id: int) -> User | None:
@@ -31,7 +32,7 @@ def update_user_profile(db: Session, user: User, updates: ProfileUpdate) -> User
             if value is not None:
                 if field == "photo":
                     value = str(value)
-                    
+
                 setattr(user, field, value)
 
         # Update student-specific fields.
@@ -64,3 +65,18 @@ def update_user_profile(db: Session, user: User, updates: ProfileUpdate) -> User
     except Exception:
         db.rollback()
         raise
+
+
+def get_public_mentor_profile(db: Session, mentor_id: int) -> User | None:
+    """Retrieve a verified mentor's public profile."""
+
+    return (
+        db.query(User)
+        .join(Mentor, Mentor.id == User.id)
+        .filter(
+            User.id == mentor_id,
+            User.role == UserRole.mentor,
+            Mentor.veri_status == VerificationStatus.verified,
+        )
+        .first()
+    )
