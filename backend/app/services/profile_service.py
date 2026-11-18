@@ -29,6 +29,9 @@ def update_user_profile(db: Session, user: User, updates: ProfileUpdate) -> User
         # Update common user fields.
         for field, value in update_data.items():
             if value is not None:
+                if field == "photo":
+                    value = str(value)
+                    
                 setattr(user, field, value)
 
         # Update student-specific fields.

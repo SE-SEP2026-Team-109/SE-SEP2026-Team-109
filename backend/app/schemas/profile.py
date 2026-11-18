@@ -1,7 +1,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, ConfigDict, Field
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, AnyUrl
 
 from app.models.enums import (
     Course,
@@ -86,6 +86,7 @@ class ProfileUpdate(BaseModel):
     username: str | None = Field(default=None, max_length=100)
     name: str | None = Field(default=None, max_length=150)
     phone: str | None = Field(default=None, max_length=30)
+    photo: AnyUrl | None = None
 
     student: StudentProfileUpdate | None = None
     mentor: MentorProfileUpdate | None = None
