@@ -115,3 +115,108 @@ def suggest_tag(
     except Exception:
         db.rollback()
         raise
+
+
+
+def create_admin_tag(
+    db: Session,
+    name: str,
+    tag_type: TagType,
+) -> Tag:
+    try:
+        existing = (
+            db.query(Tag)
+            .filter(
+                Tag.name.ilike(name),
+                Tag.type == tag_type,
+            )
+            .first()
+        )
+
+        if existing:
+            raise ValueError("A tag with this name and type already exists")
+
+        tag = Tag(
+            name=name,
+            type=tag_type,
+            t_status=True,
+        )
+
+        db.add(tag)
+        db.commit()
+        db.refresh(tag)
+
+        return tag
+
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_admin_tag(
+    db: Session,
+    tag_id: int,
+    updates,
+) -> Tag | None:
+    try:
+        tag = db.get(Tag, tag_id)
+
+        if tag is None:
+            raise LookupError("Tag not found")
+
+        update_data = updates.model_dump(exclude_unset=True)
+        action = update_data.pop("action", None)
+        name = update_data.get("name", tag.name)
+        tag_type = update_data.get("type", tag.type)
+
+        if action == "reject":
+            if tag.t_status:
+                raise ValueError("Only pending suggestions can be rejected")
+
+            linked_user_tag = (
+                db.query(UserTag)
+                .filter(UserTag.tag_id == tag_id)
+                .first()
+            )
+
+            if linked_user_tag:
+                raise ValueError("Cannot reject a tag that users have selected")
+
+            db.delete(tag)
+            db.commit()
+            return None
+
+        if name != tag.name or tag_type != tag.type:
+            existing = (
+                db.query(Tag)
+                .filter(
+                    Tag.name.ilike(name),
+                    Tag.type == tag_type,
+                    Tag.id != tag_id,
+                )
+                .first()
+            )
+
+            if existing:
+                raise ValueError(
+                    "A tag with this name and type already exists"
+                )
+
+        tag.name = name
+        tag.type = tag_type
+
+        if action == "approve":
+            tag.t_status = True
+
+        if not update_data and action is None:
+            raise ValueError("No updates provided")
+
+        db.commit()
+        db.refresh(tag)
+
+        return tag
+
+    except Exception:
+        db.rollback()
+        raise
+
