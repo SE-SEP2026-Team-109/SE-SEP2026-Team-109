@@ -43,14 +43,26 @@ class Request(Base):
 
 
 class Mentorship(Base):
+    """Represent an active or completed mentoring relationship."""
+
     __tablename__ = "mentorship"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     rid: Mapped[int] = mapped_column(ForeignKey("request.id"), unique=True, nullable=False)
     start: Mapped[datetime | None] = mapped_column(DateTime)
     end: Mapped[datetime | None] = mapped_column(DateTime)
+    student_end_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    mentor_end_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
     status: Mapped[MentorshipStatus] = mapped_column(
-        SAEnum(MentorshipStatus), nullable=False, default=MentorshipStatus.active
+        SAEnum(MentorshipStatus),
+        nullable=False,
+        default=MentorshipStatus.active,
     )
 
     request: Mapped["Request"] = relationship(back_populates="mentorship")
@@ -58,3 +70,4 @@ class Mentorship(Base):
     track_goals: Mapped[list["TrackGoal"]] = relationship(back_populates="mentorship")
     feedbacks: Mapped[list["Feedback"]] = relationship(back_populates="mentorship")
     reports: Mapped[list["ReportUser"]] = relationship(back_populates="mentorship")
+    
