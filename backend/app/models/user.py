@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -75,6 +75,10 @@ class Student(Base):
 
 class Mentor(Base):
     __tablename__ = "mentor"
+    __table_args__= ( CheckConstraint(
+        "capacity >= 0 AND capacity <= 10",
+        name="ck_mentor_capacity_range",
+    ), )
 
     id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     iitm_program: Mapped[Course] = mapped_column(
