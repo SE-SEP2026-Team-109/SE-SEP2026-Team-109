@@ -53,8 +53,10 @@ const section = computed(() => { const p = route.path; const hit = nav.value.fin
 const unread = computed(() => (user.value ? state.notifications.filter(n => n.userId === user.value.id && !n.read).length : 0))
 const pend = computed(() => (user.value ? pendingOf(user.value.id).length : 0))
 const mentees = computed(() => (user.value ? activeMentees(user.value.id).length : 0))
-const compact = ref((() => { try { const v = localStorage.getItem('mc_side'); return v === null ? window.innerWidth < 1000 : v === '1' } catch (e) { return false } })())
-const toggleSide = () => { compact.value = !compact.value; try { localStorage.setItem('mc_side', compact.value ? '1' : '0') } catch (e) { /* storage unavailable */ } }
+// Disabled: sidebar preference used to be read from localStorage; will come from the backend API instead.
+const compact = ref(window.innerWidth < 1000 /* (() => { try { const v = localStorage.getItem('mc_side'); return v === null ? window.innerWidth < 1000 : v === '1' } catch (e) { return false } })() */)
+// Disabled: used to save the sidebar collapsed/expanded preference to localStorage.
+const toggleSide = () => { compact.value = !compact.value /* ; try { localStorage.setItem('mc_side', compact.value ? '1' : '0') } catch (e) { storage unavailable } */ }
 const quick = computed(() => {
   const r = user.value.role, id = user.value.id
   if (r === 'student') return [['/student/mentors', 'Find a mentor', 'search'], ['/student/requests', 'My requests', 'send', pend.value], ['/student/goals', 'Update goals', 'target'], ['/student/sessions', 'Request a session', 'calendar']]

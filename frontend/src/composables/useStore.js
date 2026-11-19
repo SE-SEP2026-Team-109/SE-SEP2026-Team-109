@@ -4,10 +4,13 @@ import { apiLogin, apiMe, apiRegister, apiGetProfile, apiUpdateProfile } from '.
 import { COURSE_BY_DEGREE, COURSE_LEVEL_BY_PROGRAMME, STUDENT_TYPE_BY_EMPLOYMENT, DEGREE_BY_COURSE, PROGRAMME_BY_COURSE_LEVEL, EMPLOYMENT_BY_STUDENT_TYPE } from '../utils/helpers'
 const KEY = 'mentorconnect_demo_v4'
 const TOKEN_KEY = 'mentorconnect_token'
-function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.users && s.sessions) return s } catch (e) { /* ignore corrupt data */ } return seed() }
+// Disabled: mock data used to be loaded from localStorage; will come from the backend API instead.
+function load() { /* try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.users && s.sessions) return s } catch (e) { ignore corrupt data } */ return seed() }
 export const state = reactive(load())
-watch(state, () => { try { localStorage.setItem(KEY, JSON.stringify(state)) } catch (e) { /* storage unavailable */ } }, { deep: true })
-export const resetDemo = () => { localStorage.removeItem(KEY); location.href = location.pathname }
+// Disabled: state used to be persisted to localStorage; will be persisted via the backend API instead.
+// watch(state, () => { try { localStorage.setItem(KEY, JSON.stringify(state)) } catch (e) { storage unavailable } }, { deep: true })
+// Disabled: used to clear the persisted mock data store from localStorage.
+export const resetDemo = () => { /* localStorage.removeItem(KEY) */ location.href = location.pathname }
 
 export const toasts = reactive([])
 export function toast(msg, type = 'ok') { const t = { id: Math.random(), msg, type }; toasts.push(t); setTimeout(() => toasts.splice(toasts.indexOf(t), 1), 3500) }
