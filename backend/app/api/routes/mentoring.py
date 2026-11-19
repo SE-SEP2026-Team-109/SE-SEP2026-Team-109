@@ -8,7 +8,7 @@ from app.api.deps import get_current_active_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.mentoring import MentoringRead
-from app.services.mentoring_service import list_mentorings
+from app.services.mentoring_service import list_mentorings, request_mentoring_end
 
 
 router = APIRouter(prefix="/mentoring", tags=["mentoring"])
@@ -33,3 +33,28 @@ def read_mentorings(
         A list of active mentoring relationship DTOs.
     """
     return list_mentorings(db, current_user)
+
+
+
+@router.post("/{mentoring_id}/end", response_model=MentoringRead)
+def end_mentoring(
+    mentoring_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Request termination of an active mentoring relationship.
+
+    The mentorship ends immediately if the other participant has
+    already requested termination.
+
+    Args:
+        mentoring_id: ID of the mentoring relationship.
+        current_user: Authenticated and active user.
+        db: Active SQLAlchemy database session.
+
+    Returns:
+        The updated mentoring relationship.
+    """
+    return request_mentoring_end(db, current_user, mentoring_id)
+

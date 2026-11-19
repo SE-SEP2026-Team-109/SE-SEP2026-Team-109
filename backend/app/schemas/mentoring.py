@@ -53,6 +53,7 @@ class MentoringRead(BaseModel):
 
     id: int
     start: datetime | None
+    end: datetime | None
     status: MentorshipStatus
 
     student_end_requested_at: datetime | None
