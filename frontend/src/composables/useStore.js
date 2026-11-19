@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue'
 import { seed } from '../data/mock'
-import { apiLogin, apiMe, apiRegister } from '../api'
-import { COURSE_BY_DEGREE, COURSE_LEVEL_BY_PROGRAMME, STUDENT_TYPE_BY_EMPLOYMENT } from '../utils/helpers'
+import { apiLogin, apiMe, apiRegister, apiGetProfile, apiUpdateProfile } from '../api'
+import { COURSE_BY_DEGREE, COURSE_LEVEL_BY_PROGRAMME, STUDENT_TYPE_BY_EMPLOYMENT, DEGREE_BY_COURSE, PROGRAMME_BY_COURSE_LEVEL, EMPLOYMENT_BY_STUDENT_TYPE } from '../utils/helpers'
 const KEY = 'mentorconnect_demo_v4'
 const TOKEN_KEY = 'mentorconnect_token'
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.users && s.sessions) return s } catch (e) { /* ignore corrupt data */ } return seed() }
@@ -57,6 +57,36 @@ export async function login(email, password) {
   } catch (e) { return { error: e.message || 'Email or password is incorrect.' } }
 }
 export const logout = () => { state.sessionId = null; localStorage.removeItem(TOKEN_KEY) }
+
+// Maps a backend ProfileRead payload onto the local (mock-store) user object the rest of the UI reads from.
+function applyProfile(u, p) {
+  Object.assign(u, { name: p.name || u.name, username: p.username || u.username, phone: p.phone })
+  if (p.student) {
+    Object.assign(u, {
+      rollNo: p.student.rollno || u.rollNo,
+      degree: DEGREE_BY_COURSE[p.student.course] || u.degree,
+      programme: p.student.courselevel ? (PROGRAMME_BY_COURSE_LEVEL[p.student.courselevel] || u.programme) : 'Foundation',
+      needs: p.student.mneeds ?? u.needs,
+      employment: EMPLOYMENT_BY_STUDENT_TYPE[p.student.type] || u.employment
+    })
+  }
+}
+// Refreshes the signed-in user's profile from the backend (silently keeps local data if it is unreachable).
+export async function loadProfile() {
+  const token = localStorage.getItem(TOKEN_KEY), u = me()
+  if (!token || !u) return
+  try { applyProfile(u, await apiGetProfile(token)) } catch (e) { /* keep local data */ }
+}
+// Persists editable profile fields to the backend, then merges fields the UI only keeps locally (e.g. interests, skills).
+export async function saveProfile(body, localOnly = {}) {
+  const token = localStorage.getItem(TOKEN_KEY), u = me()
+  if (!token || !u) return 'You must be signed in to save your profile.'
+  try {
+    applyProfile(u, await apiUpdateProfile(token, body))
+    Object.assign(u, localOnly)
+    return null
+  } catch (e) { return e.message || 'Could not save your profile.' }
+}
 export async function register({ name, email, password, role, extra = {} }) {
   const un = (extra.username || '').trim().toLowerCase()
   if (!usernameOk(un)) return 'Choose a username of 3 to 20 lowercase letters, numbers or underscores.'

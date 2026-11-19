@@ -39,3 +39,19 @@ export async function apiMe(token) {
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
+
+export async function apiGetProfile(token) {
+  const res = await fetch(`${API_BASE}/profile/me`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function apiUpdateProfile(token, updates) {
+  const res = await fetch(`${API_BASE}/profile/me`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(updates)
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}

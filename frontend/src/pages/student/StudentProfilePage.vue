@@ -24,17 +24,18 @@
   <SuggestTagModal v-if="sugg" @close="sugg = false" />
 </template>
 <script setup>
-import { ref, reactive, computed } from 'vue'
-import { me, toast, approvedTags } from '../../composables/useStore'
-import { DEGREES } from '../../utils/helpers'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { me, toast, approvedTags, loadProfile, saveProfile } from '../../composables/useStore'
+import { DEGREES, COURSE_BY_DEGREE, COURSE_LEVEL_BY_PROGRAMME } from '../../utils/helpers'
 import AccountExtras from '../../components/AccountExtras.vue'
 import SuggestTagModal from '../../components/SuggestTagModal.vue'
 const u = computed(me), edit = ref(false), errs = ref([]), f = reactive({}), newSkill = ref(''), sugg = ref(false), tags = computed(approvedTags), progs = ['Foundation', 'Diploma', 'BSc', 'BS Degree']
+onMounted(loadProfile)
 const pct = computed(() => Math.round([u.value.programme, u.value.interests.length, u.value.needs, u.value.skills.length].filter(Boolean).length * 25))
 const pick = t => { const i = f.interests.indexOf(t); if (i >= 0) f.interests.splice(i, 1); else if (f.interests.length < 5) f.interests.push(t); else toast('You can choose up to 5 interests.', 'err') }
 const addSkill = () => { const n = newSkill.value.trim(); if (n) { f.skills.push({ name: n, level: 1, want: false }); newSkill.value = '' } }
 const start = () => { Object.assign(f, { name: u.value.name, programme: u.value.programme, degree: u.value.degree || '', interests: [...u.value.interests], needs: u.value.needs, skills: u.value.skills.map(x => ({ ...x })) }); errs.value = []; edit.value = true }
-function save() {
+async function save() {
   const e = [], i = f.interests
   if (f.name.trim().length < 2) e.push('Enter your name.')
   if (!f.programme) e.push('Select your programme level.')
@@ -46,7 +47,10 @@ function save() {
   if (new Set(names).size !== names.length) e.push('Each skill can be listed only once.')
   errs.value = e
   if (e.length) return
-  Object.assign(u.value, { name: f.name.trim(), programme: f.programme, degree: f.degree, interests: [...i], needs: f.needs.trim(), skills: sk.map(k => ({ name: k.name.trim(), level: k.level, want: !!k.want })) })
+  const body = { name: f.name.trim(), student: { course: COURSE_BY_DEGREE[f.degree], courselevel: COURSE_LEVEL_BY_PROGRAMME[f.programme] ?? undefined, mneeds: f.needs.trim() } }
+  const localOnly = { interests: [...i], needs: f.needs.trim(), skills: sk.map(k => ({ name: k.name.trim(), level: k.level, want: !!k.want })) }
+  const err = await saveProfile(body, localOnly)
+  if (err) { errs.value = [err]; return }
   edit.value = false; toast('Profile saved')
 }
 </script>
