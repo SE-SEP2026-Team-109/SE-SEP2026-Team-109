@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, health, profile, tags, mentor_directory
+from app.api.routes import (
+    auth, health, profile, tags, mentor_directory,
+    requests,
+)
 from app.core.config import get_settings
 from app.core.seed import seed_demo_users
 from app.database import Base, SessionLocal, engine
@@ -31,3 +34,4 @@ app.include_router(profile.mentor_router, prefix=settings.api_prefix)
 app.include_router(profile.student_router, prefix=settings.api_prefix)
 app.include_router(tags.router, prefix=settings.api_prefix)
 app.include_router(mentor_directory.router, prefix=settings.api_prefix)
+app.include_router(requests.router, prefix=settings.api_prefix)
