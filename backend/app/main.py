@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     auth, health, profile, tags, mentor_directory,
-    requests,
+    requests, mentoring,
 )
 from app.core.config import get_settings
 from app.core.seed import seed_demo_users
@@ -35,3 +35,4 @@ app.include_router(profile.student_router, prefix=settings.api_prefix)
 app.include_router(tags.router, prefix=settings.api_prefix)
 app.include_router(mentor_directory.router, prefix=settings.api_prefix)
 app.include_router(requests.router, prefix=settings.api_prefix)
+app.include_router(mentoring.router, prefix=settings.api_prefix)
