@@ -8,7 +8,7 @@ from app.api.deps import get_current_active_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.mentoring import MentoringRead
-from app.services.mentoring_service import list_mentorings, request_mentoring_end
+from app.services.mentoring_service import list_mentorings, request_mentoring_end, cancel_mentoring_end
 
 
 router = APIRouter(prefix="/mentoring", tags=["mentoring"])
@@ -57,4 +57,14 @@ def end_mentoring(
         The updated mentoring relationship.
     """
     return request_mentoring_end(db, current_user, mentoring_id)
+
+
+@router.post("/{mentoring_id}/end/cancel", response_model=MentoringRead)
+def cancel_end_mentoring(
+    mentoring_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Withdraw the authenticated participant's pending mentorship end request."""
+    return cancel_mentoring_end(db, current_user, mentoring_id)
 

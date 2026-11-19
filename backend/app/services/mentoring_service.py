@@ -262,3 +262,107 @@ def request_mentoring_end(
         "student": request.student,
         "mentor": request.mentor,
     }
+
+
+def cancel_mentoring_end(
+    db: Session,
+    current_user: User,
+    mentoring_id: int,
+) -> dict:
+    """
+    Allow a participant to withdraw their pending mentorship end request.
+
+    Args:
+        db: The database session.
+        current_user: The authenticated student or mentor.
+        mentoring_id: The ID of the mentorship.
+
+    Returns:
+        dict: The updated mentorship with participant details.
+
+    Raises:
+        HTTPException: If the mentorship does not exist, the caller is
+            not a participant, the mentorship has ended, or the caller
+            has no pending end request.
+    """
+    mentorship = (
+        db.query(Mentorship)
+        .options(
+            joinedload(Mentorship.request)
+            .joinedload(Request.student)
+            .joinedload(Student.user),
+            joinedload(Mentorship.request)
+            .joinedload(Request.mentor)
+            .joinedload(Mentor.user),
+        )
+        .filter(Mentorship.id == mentoring_id)
+        .with_for_update(of=Mentorship)
+        .first()
+    )
+
+    if mentorship is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Mentorship not found.",
+        )
+
+    request = mentorship.request
+
+    is_student = (
+        current_user.role == UserRole.student
+        and request.sid == current_user.id
+    )
+    is_mentor = (
+        current_user.role == UserRole.mentor
+        and request.mid == current_user.id
+    )
+
+    if not (is_student or is_mentor):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Mentorship not found.",
+        )
+
+    if mentorship.status != MentorshipStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot withdraw an end request from an inactive mentorship.",
+        )
+
+    if is_student:
+        if mentorship.student_end_requested_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You have not requested to end this mentorship.",
+            )
+
+        mentorship.student_end_requested_at = None
+
+    else:
+        if mentorship.mentor_end_requested_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You have not requested to end this mentorship.",
+            )
+
+        mentorship.mentor_end_requested_at = None
+
+    try:
+        db.commit()
+        db.refresh(mentorship)
+
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "id": mentorship.id,
+        "start": mentorship.start,
+        "end": mentorship.end,
+        "status": mentorship.status,
+        "student_end_requested_at": mentorship.student_end_requested_at,
+        "mentor_end_requested_at": mentorship.mentor_end_requested_at,
+        "student": request.student,
+        "mentor": request.mentor,
+    }
+
