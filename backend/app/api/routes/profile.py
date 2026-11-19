@@ -20,6 +20,11 @@ from app.services.profile_service import (
     get_student_profile_card
 )
 
+from app.schemas.tags import ProfileTagRead, ProfileTagsUpdate
+from app.services.tag_service import update_profile_tags
+
+
+
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 
@@ -97,6 +102,7 @@ def read_public_mentor_profile(
         "experience": mentor.experience,
         "capacity": mentor.capacity,
         "pause": mentor.pause,
+        "tags": mentor_user.user_tags,
     }
 
 
@@ -139,4 +145,24 @@ def read_student_profile_card(
         "type": student.type,
         "careergoal": student.careergoal,
         "mneeds": student.mneeds,
+        "tags": student_user.user_tags,
     }
+
+
+@router.put("/me/tags", response_model=list[ProfileTagRead])
+def update_my_tags(
+    payload: ProfileTagsUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return update_profile_tags(
+            db=db,
+            user=current_user,
+            tags=payload.tags,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
