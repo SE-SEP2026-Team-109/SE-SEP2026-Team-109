@@ -11,7 +11,7 @@ from app.models.enums import (
     VerificationStatus,
 )
 from app.models.user import UserRole
-
+from app.schemas.tags import ProfileTagRead
 
 class StudentProfileRead(BaseModel):
     course: Course
@@ -98,6 +98,7 @@ class ProfileUpdate(BaseModel):
 class MentorPublicProfileRead(BaseModel):
     id: int
     name: str | None
+    email: EmailStr | None = None
     photo: str | None
 
     iitm_program: Course
@@ -109,6 +110,7 @@ class MentorPublicProfileRead(BaseModel):
     experience: float | None
     capacity: int
     pause: bool
+    tags: list[ProfileTagRead] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -116,11 +118,14 @@ class MentorPublicProfileRead(BaseModel):
 class StudentProfileCardRead(BaseModel):
     id: int
     name: str | None
+    email: EmailStr | None = None
     photo: str | None
     course: Course
     courselevel: CourseLevel | None
     type: StudentType
     careergoal: str | None
     mneeds: str | None
+    tags: list[ProfileTagRead] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
+

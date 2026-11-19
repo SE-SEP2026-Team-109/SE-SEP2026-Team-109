@@ -17,8 +17,14 @@ from app.services.profile_service import (
     get_user_profile, 
     update_user_profile,
     get_public_mentor_profile,
-    get_student_profile_card
+    get_student_profile_card,
+    has_active_mentorship,
 )
+
+from app.schemas.tags import ProfileTagRead, ProfileTagsUpdate
+from app.services.tag_service import update_profile_tags
+
+
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -84,9 +90,19 @@ def read_public_mentor_profile(
 
     mentor = mentor_user.mentor
 
+    show_email = (
+        current_user.role == UserRole.student
+        and has_active_mentorship(
+            db,
+            student_id=current_user.id,
+            mentor_id=mentor_user.id,
+        )
+    )
+
     return {
         "id": mentor_user.id,
         "name": mentor_user.name,
+        "email": mentor_user.email if show_email else None,
         "photo": mentor_user.photo,
         "iitm_program": mentor.iitm_program,
         "level_completed": mentor.level_completed,
@@ -97,6 +113,7 @@ def read_public_mentor_profile(
         "experience": mentor.experience,
         "capacity": mentor.capacity,
         "pause": mentor.pause,
+        "tags": mentor_user.user_tags,
     }
 
 
@@ -130,13 +147,44 @@ def read_student_profile_card(
 
     student = student_user.student
 
+    show_email = (
+        current_user.role == UserRole.mentor
+        and has_active_mentorship(
+            db,
+            student_id=student_user.id,
+            mentor_id=current_user.id,
+        )
+    )
+
     return {
         "id": student_user.id,
         "name": student_user.name,
+        "email": student_user.email if show_email else None,
         "photo": student_user.photo,
         "course": student.course,
         "courselevel": student.courselevel,
         "type": student.type,
         "careergoal": student.careergoal,
         "mneeds": student.mneeds,
+        "tags": student_user.user_tags,
     }
+
+
+@router.put("/me/tags", response_model=list[ProfileTagRead])
+def update_my_tags(
+    payload: ProfileTagsUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return update_profile_tags(
+            db=db,
+            user=current_user,
+            tags=payload.tags,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
