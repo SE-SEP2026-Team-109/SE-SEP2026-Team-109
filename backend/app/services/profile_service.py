@@ -4,6 +4,8 @@ from app.models.user import VerificationStatus
 from app.models.user import User, UserRole, Mentor, Student
 from app.schemas.profile import ProfileUpdate
 from app.models.tags import UserTag
+from app.models.mentoring import Mentorship, Request
+from app.models.enums import MentorshipStatus
 
 def get_user_profile(db: Session, user_id: int) -> User | None:
     """Retrieves a user with their associated role profiles."""
@@ -100,4 +102,23 @@ def get_student_profile_card(db: Session, student_id: int) -> User | None:
             User.role == UserRole.student,
         )
         .first()
+    )
+
+def has_active_mentorship(
+    db: Session,
+    student_id: int,
+    mentor_id: int,
+) -> bool:
+    """Check whether a student and mentor have an active mentorship."""
+
+    return (
+        db.query(Mentorship)
+        .join(Request, Mentorship.rid == Request.id)
+        .filter(
+            Request.sid == student_id,
+            Request.mid == mentor_id,
+            Mentorship.status == MentorshipStatus.active,
+        )
+        .first()
+        is not None
     )
