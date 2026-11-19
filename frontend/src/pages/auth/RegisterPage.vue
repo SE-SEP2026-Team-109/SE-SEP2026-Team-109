@@ -59,7 +59,7 @@ const progs = ['Foundation', 'Diploma', 'BSc', 'BS Degree'], jobs = ['Studying o
 const f = reactive({ role: 'student', name: '', username: '', degree: '', careerArea: '', phone: '', email: '', password: '', confirm: '', rollNo: '', programme: '', employment: '',
   title: '', company: '', years: 0, industry: '', completed: '', gradYear: thisYear - 1, bio: '', expertise: [], support: [], capacity: 2, linkedin: '', agree: false })
 const pick = (arr, t, max) => { const i = arr.indexOf(t); if (i >= 0) arr.splice(i, 1); else if (arr.length < max) arr.push(t) }
-function submit() {
+async function submit() {
   const e = [], s = f.role === 'student'
   if (f.name.trim().length < 2) e.push('Enter your full name.')
   if (!/^[a-z0-9_]{3,20}$/.test(f.username.trim().toLowerCase())) e.push('Choose a username of 3 to 20 letters, numbers or underscores.')
@@ -88,12 +88,11 @@ function submit() {
     if (f.linkedin.trim() && !/^https:\/\/([\w-]+\.)?linkedin\.com\/.+/i.test(f.linkedin.trim())) e.push('LinkedIn link must start with https://linkedin.com/ or https://www.linkedin.com/.')
   }
   if (!f.agree) e.push('Please accept the sharing and guidelines statement.')
-  if (!e.length) {
-    const extra = s ? { username: f.username, degree: f.degree, rollNo: f.rollNo.trim().toLowerCase(), programme: f.programme, employment: f.employment, phone: f.phone.trim() }
-      : { username: f.username, careerArea: f.careerArea, title: f.title.trim(), company: f.company.trim(), years: f.years, industry: f.industry.trim(), completed: f.completed, gradYear: f.gradYear, bio: f.bio.trim(), expertise: [...f.expertise], support: [...f.support], capacity: f.capacity, linkedin: f.linkedin.trim(), phone: f.phone.trim() }
-    const r = register({ name: f.name, email: f.email, password: f.password, role: f.role, extra }); if (r) e.push(r)
-  }
-  errs.value = e
-  if (!e.length) router.push('/register/success')
+  if (e.length) { errs.value = e; return }
+  const extra = s ? { username: f.username, degree: f.degree, rollNo: f.rollNo.trim().toLowerCase(), programme: f.programme, employment: f.employment, phone: f.phone.trim() }
+    : { username: f.username, careerArea: f.careerArea, title: f.title.trim(), company: f.company.trim(), years: f.years, industry: f.industry.trim(), completed: f.completed, gradYear: f.gradYear, bio: f.bio.trim(), expertise: [...f.expertise], support: [...f.support], capacity: f.capacity, linkedin: f.linkedin.trim(), phone: f.phone.trim() }
+  const r = await register({ name: f.name, email: f.email, password: f.password, role: f.role, extra })
+  errs.value = r ? [r] : []
+  if (!r) router.push('/register/success')
 }
 </script>

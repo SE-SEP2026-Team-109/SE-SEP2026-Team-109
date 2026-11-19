@@ -8,6 +8,10 @@ export const list = s => [...new Set(s.split(',').map(x => x.trim()).filter(Bool
 export const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening' }
 export const DEGREES = ['ES', 'DS', 'Aero', 'Management']
 export const CAREER_AREAS = ['Data Science', 'Software Engineering', 'Product Management', 'Research', 'Analytics', 'Entrepreneurship', 'Finance']
+// Maps the registration form's UI labels to the backend's Course/CourseLevel/StudentType enum values.
+export const COURSE_BY_DEGREE = { ES: 'electronic_systems', DS: 'data_science_and_applications', Aero: 'aeronautics_and_space_technology', Management: 'management_and_data_science' }
+export const COURSE_LEVEL_BY_PROGRAMME = { Foundation: null, Diploma: 'diploma', BSc: 'bsc_degree', 'BS Degree': 'bs_degree' }
+export const STUDENT_TYPE_BY_EMPLOYMENT = { 'Studying only': 'standalone', 'Working full time': 'full_time_working_professional', 'Working part time': 'part_time_working_professional', 'Between jobs': 'standalone' }
 // Shrinks a chosen photo to a small JPEG data URL so it is cheap to keep in the browser (mock) store.
 export const resizeImage = (file, max = 200) => new Promise((resolve, reject) => {
   if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) return reject(new Error('Choose a PNG, JPG or WebP image.'))
