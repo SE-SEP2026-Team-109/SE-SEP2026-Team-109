@@ -79,9 +79,8 @@ class SessionStatus(str, enum.Enum):
 
 
 class GoalVisibility(str, enum.Enum):
-    public = "public"
-    mentors = "mentors"
     private = "private"
+    all_mentors = "all_mentors"
     mentorship_only = "mentorship_only"
 
 
