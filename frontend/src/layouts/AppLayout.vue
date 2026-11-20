@@ -42,9 +42,9 @@ import Icon from '../components/Icon.vue'
 import Avatar from '../components/Avatar.vue'
 const router = useRouter(), route = useRoute(), user = computed(me)
 const NAV = {
-  student: [['/student/dashboard', 'Home', 'dashboard'], ['/student/mentors', 'Mentors', 'search'], ['/student/requests', 'Requests', 'send'], ['/student/goals', 'Goals', 'target'], ['/student/sessions', 'Sessions', 'calendar'], ['/student/feedback', 'Feedback', 'star'], ['/student/profile', 'Profile', 'user'], ['/account', 'Account', 'settings']],
-  mentor: [['/mentor/dashboard', 'Home', 'dashboard'], ['/mentor/requests', 'Requests', 'inbox'], ['/mentor/mentees', 'Mentees', 'users'], ['/mentor/sessions', 'Sessions', 'calendar'], ['/mentor/availability', 'Availability', 'clock'], ['/mentor/feedback', 'Feedback', 'star'], ['/mentor/profile', 'Profile', 'user'], ['/account', 'Account', 'settings']],
-  coordinator: [['/coordinator/dashboard', 'Insights', 'chart'], ['/coordinator/matching', 'Matching', 'users'], ['/coordinator/goals', 'Goals', 'target'], ['/coordinator/profile', 'Profile', 'user'], ['/account', 'Account', 'settings']],
+  student: [['/student/dashboard', 'Home', 'dashboard'], ['/student/mentors', 'Mentors', 'search'], ['/student/requests', 'Requests', 'send'], ['/student/goals', 'Goals', 'target'], ['/student/sessions', 'Sessions', 'calendar'], ['/student/feedback', 'Feedback', 'star'], ['/student/profile', 'Profile', 'user'], ['/account', 'User feedback', 'message']],
+  mentor: [['/mentor/dashboard', 'Home', 'dashboard'], ['/mentor/requests', 'Requests', 'inbox'], ['/mentor/mentees', 'Mentees', 'users'], ['/mentor/sessions', 'Sessions', 'calendar'], ['/mentor/availability', 'Availability', 'clock'], ['/mentor/feedback', 'Feedback', 'star'], ['/mentor/profile', 'Profile', 'user'], ['/account', 'User feedback', 'message']],
+  coordinator: [['/coordinator/dashboard', 'Insights', 'chart'], ['/coordinator/matching', 'Matching', 'users'], ['/coordinator/goals', 'Goals', 'target'], ['/coordinator/profile', 'Profile', 'user'], ['/account', 'User feedback', 'message']],
   admin: [['/admin/dashboard', 'Overview', 'chart'], ['/admin/dashboard?tab=users', 'Users', 'users'], ['/admin/dashboard?tab=content', 'Content', 'clipboard'], ['/admin/dashboard?tab=reports', 'Reports', 'shield']]
 }
 const roleLabel = computed(() => ({ student: 'Student', mentor: 'Mentor', coordinator: 'Coordinator', admin: 'Administrator' }[user.value?.role]))
