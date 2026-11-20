@@ -164,3 +164,110 @@ def create_goal(
 
     return goal
 
+def update_goal(
+    db: Session,
+    current_user: User,
+    goal_id: int,
+    data: GoalCreate,
+) -> TrackGoal:
+    """
+    Update an existing goal owned by the authenticated student.
+
+    Args:
+        db: Database session.
+        current_user: Authenticated student.
+        goal_id: ID of the goal to update.
+        data: Updated goal details.
+
+    Returns:
+        The updated goal.
+
+    Raises:
+        HTTPException: If the user is not a student, the goal does not
+            belong to them, the deadline is in the past, or the goal
+            is associated with an ended mentorship.
+    """
+    if current_user.role != UserRole.student:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only students can update goals.",
+        )
+
+    goal = (
+        db.query(TrackGoal)
+        .filter(
+            TrackGoal.id == goal_id,
+            TrackGoal.sid == current_user.id,
+            TrackGoal.status != TrackGoalStatus.delete,
+        )
+        .first()
+    )
+
+    if goal is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Goal not found.",
+        )
+
+    # A goal associated with an ended mentorship is read-only.
+    if goal.mgid is not None:
+        mentorship = (
+            db.query(Mentorship)
+            .filter(Mentorship.id == goal.mgid)
+            .first()
+        )
+
+        if mentorship is None or mentorship.status != MentorshipStatus.active:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Goals associated with ended mentorships cannot be updated.",
+            )
+
+    deadline = data.deadline
+    if deadline.tzinfo is not None:
+        deadline = deadline.astimezone(timezone.utc).replace(tzinfo=None)
+
+    if deadline < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The goal deadline cannot be in the past.",
+        )
+
+    # Attach an active mentorship if this goal is being made
+    # mentorship-only and does not already have one.
+    if (
+        data.visibility == GoalVisibility.mentorship_only
+        and goal.mgid is None
+    ):
+        active_mentorship = (
+            db.query(Mentorship)
+            .join(Request, Mentorship.rid == Request.id)
+            .filter(
+                Request.sid == current_user.id,
+                Mentorship.status == MentorshipStatus.active,
+            )
+            .first()
+        )
+
+        if active_mentorship is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Mentorship-only visibility requires an active mentorship.",
+            )
+
+        goal.mgid = active_mentorship.id
+
+    goal.title = data.title
+    goal.description = data.description
+    goal.deadline = deadline
+    goal.visibility = data.visibility
+
+    try:
+        db.commit()
+        db.refresh(goal)
+    except Exception:
+        db.rollback()
+        raise
+
+    return goal
+

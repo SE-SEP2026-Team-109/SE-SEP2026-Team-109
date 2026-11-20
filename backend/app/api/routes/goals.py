@@ -10,7 +10,7 @@ from app.api.deps import get_current_active_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.goals import GoalPage, GoalCreate, GoalRead
-from app.services.goal_service import list_my_goals, create_goal
+from app.services.goal_service import list_my_goals, create_goal, update_goal
 
 
 router = APIRouter(prefix="/goals", tags=["goals"])
@@ -45,4 +45,15 @@ def create_student_goal(
 ):
     """Create a career goal for the authenticated student."""
     return create_goal(db, current_user, data)
+
+
+@router.put("/{goal_id}", response_model=GoalRead)
+def update_student_goal(
+    goal_id: int,
+    data: GoalCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update a goal owned by the authenticated student."""
+    return update_goal(db, current_user, goal_id, data)
 
