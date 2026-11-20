@@ -1,6 +1,6 @@
 <template>
-  <PageHeader title="Account" desc="Report a concern, share anonymous feedback, or manage your account." />
-  <div class="grid two">
+  <PageHeader title="User feedback" desc="Report a concern, send anonymous feedback to the programme team, or request account deletion." />
+  <div class="fb-grid">
     <section class="card" aria-labelledby="rp"><h2 id="rp">Report a user</h2>
       <p class="muted">Reports go to programme administrators only. Describe what happened; evidence is optional.</p>
       <label for="ru">Who are you reporting?</label><select id="ru" v-model="r.who"><option value="">Select a person</option><option v-for="p in people" :key="p.id" :value="p.id">{{ p.name }} ({{ p.role }})</option></select>
