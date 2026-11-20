@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user
 from app.database import get_db
 from app.models.user import User
-from app.schemas.goals import GoalPage, GoalCreate, GoalRead
-from app.services.goal_service import list_my_goals, create_goal, update_goal, delete_goal
+from app.schemas.goals import GoalPage, GoalCreate, GoalRead, GoalStatusUpdate
+from app.services.goal_service import (
+    list_my_goals, create_goal, 
+    update_goal, delete_goal, update_goal_status,
+)
 
 
 router = APIRouter(prefix="/goals", tags=["goals"])
@@ -67,4 +70,16 @@ def delete_student_goal(
     """Delete a goal owned by the authenticated student."""
     delete_goal(db, current_user, goal_id)
     return None
+
+
+
+@router.patch("/{goal_id}/status", response_model=GoalRead)
+def update_student_goal_status(
+    goal_id: int,
+    data: GoalStatusUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update the status of a goal owned by the authenticated student."""
+    return update_goal_status(db, current_user, goal_id, data.status)
 

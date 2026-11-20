@@ -46,3 +46,10 @@ class GoalCreate(BaseModel):
     deadline: datetime
     visibility: GoalVisibility = GoalVisibility.private
 
+
+class GoalStatusUpdate(BaseModel):
+    """Request schema for updating a goal's status."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["todo", "in_progress", "done"]
