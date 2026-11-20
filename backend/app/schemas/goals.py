@@ -35,3 +35,14 @@ class GoalPage(BaseModel):
     page: int
     page_size: int
     total: int
+
+class GoalCreate(BaseModel):
+    """Request schema for creating a career goal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    deadline: datetime
+    visibility: GoalVisibility = GoalVisibility.private
+

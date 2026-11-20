@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_active_user
 from app.database import get_db
 from app.models.user import User
-from app.schemas.goals import GoalPage
-from app.services.goal_service import list_my_goals
+from app.schemas.goals import GoalPage, GoalCreate, GoalRead
+from app.services.goal_service import list_my_goals, create_goal
 
 
 router = APIRouter(prefix="/goals", tags=["goals"])
@@ -36,4 +36,13 @@ def read_goals(
         page,
         page_size,
     )
+
+@router.post("", response_model=GoalRead, status_code=201)
+def create_student_goal(
+    data: GoalCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Create a career goal for the authenticated student."""
+    return create_goal(db, current_user, data)
 
