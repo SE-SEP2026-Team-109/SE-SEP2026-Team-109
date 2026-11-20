@@ -4,6 +4,7 @@
 from fastapi import HTTPException, status
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.models.enums import (
     GoalVisibility,
@@ -399,5 +400,113 @@ def update_goal_status(
         raise
 
     return goal
+
+
+
+def list_student_goals(
+    db: Session,
+    current_user: User,
+    student_id: int,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """List goals belonging to a student that are visible to the current user.
+
+    Mentors can see all_mentors goals and mentorship_only goals when they
+    have an active mentorship with the student. Coordinators and admins
+    can see all non-private goals.
+
+    Args:
+        db: Database session.
+        current_user: Authenticated user making the request.
+        student_id: ID of the student whose goals are requested.
+        page: Page number, starting at 1.
+        page_size: Maximum number of goals returned per page.
+
+    Returns:
+        A paginated dictionary containing visible goals.
+
+    Raises:
+        HTTPException: If the user's role is not permitted or the student
+            does not exist.
+    """
+    if current_user.role not in (
+        UserRole.mentor,
+        UserRole.coordinator,
+        UserRole.admin,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not allowed to view this student's goals.",
+        )
+
+    student_exists = (
+        db.query(Student.id)
+        .filter(Student.id == student_id)
+        .first()
+    )
+
+    if student_exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found.",
+        )
+
+    query = db.query(TrackGoal).filter(
+        TrackGoal.sid == student_id,
+        TrackGoal.status != TrackGoalStatus.delete,
+    )
+
+    if current_user.role == UserRole.mentor:
+        active_mentorship_ids = (
+            db.query(Mentorship.id)
+            .join(Request, Mentorship.rid == Request.id)
+            .filter(
+                Request.sid == student_id,
+                Request.mid == current_user.id,
+                Mentorship.status == MentorshipStatus.active,
+            )
+            .all()
+        )
+
+        active_mentorship_ids = [
+            mentorship_id for (mentorship_id,) in active_mentorship_ids
+        ]
+
+        query = query.filter(
+            (TrackGoal.visibility == GoalVisibility.all_mentors)
+            | (
+                (TrackGoal.visibility == GoalVisibility.mentorship_only)
+                & (TrackGoal.mgid.in_(active_mentorship_ids))
+            )
+        )
+    else:
+        query = query.filter(
+            TrackGoal.visibility.in_(
+                [
+                    GoalVisibility.all_mentors,
+                    GoalVisibility.mentorship_only,
+                ]
+            )
+        )
+
+    total = query.with_entities(func.count(TrackGoal.id)).scalar()
+
+    items = (
+        query.order_by(
+            TrackGoal.created_on.desc(),
+            TrackGoal.id.desc(),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": items,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+    }
 
 

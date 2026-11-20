@@ -13,10 +13,12 @@ from app.schemas.goals import GoalPage, GoalCreate, GoalRead, GoalStatusUpdate
 from app.services.goal_service import (
     list_my_goals, create_goal, 
     update_goal, delete_goal, update_goal_status,
+    list_student_goals,
 )
 
 
 router = APIRouter(prefix="/goals", tags=["goals"])
+student_goals_router = APIRouter(tags=["goals"])
 
 
 @router.get("", response_model=GoalPage)
@@ -82,4 +84,24 @@ def update_student_goal_status(
 ):
     """Update the status of a goal owned by the authenticated student."""
     return update_goal_status(db, current_user, goal_id, data.status)
+
+
+
+@student_goals_router.get("/students/{id}/goals", response_model=GoalPage)
+def get_student_goals(
+    id: int,
+    page: int = Query(default=1, ge=1, le=100000),
+    page_size: int = Query(default=20, ge=1, le=50),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """List goals visible to the authenticated user for a student."""
+    return list_student_goals(
+        db=db,
+        current_user=current_user,
+        student_id=id,
+        page=page,
+        page_size=page_size,
+    )
+
 
