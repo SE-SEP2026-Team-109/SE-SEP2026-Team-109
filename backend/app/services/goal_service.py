@@ -271,3 +271,63 @@ def update_goal(
 
     return goal
 
+def delete_goal(
+    db: Session,
+    current_user: User,
+    goal_id: int,
+) -> None:
+    """
+    Delete a goal owned by the authenticated student.
+
+    Args:
+        db: Database session.
+        current_user: Authenticated student.
+        goal_id: ID of the goal to delete.
+
+    Raises:
+        HTTPException: If the user is not a student, the goal does not
+            belong to them, or the goal is associated with an ended
+            mentorship.
+    """
+    if current_user.role != UserRole.student:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only students can delete goals.",
+        )
+
+    goal = (
+        db.query(TrackGoal)
+        .filter(
+            TrackGoal.id == goal_id,
+            TrackGoal.sid == current_user.id,
+            TrackGoal.status != TrackGoalStatus.delete,
+        )
+        .first()
+    )
+
+    if goal is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Goal not found.",
+        )
+
+    if goal.mgid is not None:
+        mentorship = (
+            db.query(Mentorship)
+            .filter(Mentorship.id == goal.mgid)
+            .first()
+        )
+
+        if mentorship is None or mentorship.status != MentorshipStatus.active:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Goals associated with ended mentorships cannot be deleted.",
+            )
+
+    try:
+        db.delete(goal)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+

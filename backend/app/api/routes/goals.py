@@ -10,7 +10,7 @@ from app.api.deps import get_current_active_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.goals import GoalPage, GoalCreate, GoalRead
-from app.services.goal_service import list_my_goals, create_goal, update_goal
+from app.services.goal_service import list_my_goals, create_goal, update_goal, delete_goal
 
 
 router = APIRouter(prefix="/goals", tags=["goals"])
@@ -56,4 +56,15 @@ def update_student_goal(
 ):
     """Update a goal owned by the authenticated student."""
     return update_goal(db, current_user, goal_id, data)
+
+
+@router.delete("/{goal_id}", status_code=204)
+def delete_student_goal(
+    goal_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a goal owned by the authenticated student."""
+    delete_goal(db, current_user, goal_id)
+    return None
 
