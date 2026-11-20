@@ -22,7 +22,7 @@ class TrackGoal(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[TrackGoalStatus] = mapped_column(
-        SAEnum(TrackGoalStatus), nullable=False, default=TrackGoalStatus.in_progress
+        SAEnum(TrackGoalStatus), nullable=False, default=TrackGoalStatus.todo
     )
     deadline: Mapped[datetime | None] = mapped_column(DateTime)
     created_on: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)

@@ -64,6 +64,7 @@ class RequestSource(str, enum.Enum):
 
 
 class TrackGoalStatus(str, enum.Enum):
+    todo = "todo"
     in_progress = "in_progress"
     done = "done"
     delete = "delete"
