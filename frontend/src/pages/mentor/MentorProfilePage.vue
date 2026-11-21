@@ -28,14 +28,14 @@
 </template>
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import { me, toast, approvedTags } from '../../composables/useStore'
+import { me, toast, approvedTags, saveProfile } from '../../composables/useStore'
 import { list, CAREER_AREAS } from '../../utils/helpers'
 import AccountExtras from '../../components/AccountExtras.vue'
 import SuggestTagModal from '../../components/SuggestTagModal.vue'
 const u = computed(me), edit = ref(false), errs = ref([]), f = reactive({}), sugg = ref(false), tags = computed(approvedTags)
 const pick = t => { const i = f.expertise.indexOf(t); if (i >= 0) f.expertise.splice(i, 1); else if (f.expertise.length < 6) f.expertise.push(t); else toast('You can choose up to 6 expertise areas.', 'err') }
 const start = () => { Object.assign(f, { title: u.value.title, company: u.value.company, years: u.value.years, careerArea: u.value.careerArea || '', industry: u.value.industry, bio: u.value.bio, expertise: [...u.value.expertise], capacity: u.value.capacity, support: u.value.support.join(', ') }); errs.value = []; edit.value = true }
-function save() {
+async function save() {
   const e = [], x = f.expertise
   if (f.title.trim().length < 2) e.push('Enter your job title.')
   if (f.company.trim().length < 2) e.push('Enter your company or institution.')
@@ -48,7 +48,9 @@ function save() {
   if (!(f.capacity >= 1 && f.capacity <= 10)) e.push('Capacity must be between 1 and 10.')
   errs.value = e
   if (e.length) return
-  Object.assign(u.value, { capacity: f.capacity, title: f.title.trim(), company: f.company.trim(), years: f.years, careerArea: f.careerArea, industry: f.industry.trim(), bio: f.bio.trim(), expertise: x, support: list(f.support) })
-  edit.value = false; toast('Profile saved. Students can now find you.')
+  // Saved on the server: mentor fields, then expertise tags (C2 + C3).
+  const err = await saveProfile({ mentor: { capacity: Number(f.capacity), designation: f.title.trim(), company: f.company.trim(), experience: Number(f.years), career_area: f.careerArea, industry: f.industry.trim(), bio: f.bio.trim(), support_types: list(f.support) } }, [...x])
+  if (err) { errs.value = [err]; return }
+  edit.value = false; toast(u.value.verified ? 'Profile saved. Students can now find you.' : 'Profile saved. Students will see it once an admin verifies you.')
 }
 </script>

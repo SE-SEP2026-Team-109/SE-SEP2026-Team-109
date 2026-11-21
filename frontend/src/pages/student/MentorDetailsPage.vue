@@ -27,7 +27,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { state, me, userById, openSlots, activeMentees, mentorshipOf, avgScore, fmtDT } from '../../composables/useStore'
+import { state, me, userById, openSlots, activeMentees, activeCount, mentorshipOf, avgScore, fmtDT } from '../../composables/useStore'
 import PageHeader from '../../components/PageHeader.vue'
 import EmptyState from '../../components/EmptyState.vue'
 import Avatar from '../../components/Avatar.vue'
@@ -37,5 +37,5 @@ const m = computed(() => { const x = userById(route.params.mentorId); return x &
 const matched = computed(() => m.value && mentorshipOf(me().id, m.value.id)), open = computed(() => state.availability.filter(a => m.value && a.mentorId === m.value.id && a.status === 'open' && a.start > Date.now()).sort((a, b) => a.start - b.start))
 const pub = computed(() => state.feedback.filter(f => m.value && f.toId === m.value.id && f.isPublic))
 const slots = computed(() => (m.value ? openSlots(m.value) : 0))
-const active = computed(() => (m.value ? activeMentees(m.value.id).length : 0))
+const active = computed(() => (m.value ? activeCount(m.value) : 0))
 </script>

@@ -10,5 +10,5 @@ import { ref } from 'vue'
 import { suggestTag, toast } from '../composables/useStore'
 import ConfirmModal from './ConfirmModal.vue'
 const emit = defineEmits(['close']), name = ref(''), err = ref('')
-const send = () => { err.value = suggestTag(name.value) || ''; if (!err.value) { toast('Tag suggested for admin approval'); emit('close') } }
+const send = async () => { err.value = (await suggestTag(name.value)) || ''; if (!err.value) { toast('Tag suggested for admin approval'); emit('close') } }
 </script>

@@ -1,11 +1,10 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-sqlalchemy==2.0.36
+# MentorConnect Flask backend - runtime dependencies (pinned for reproducible installs)
+Flask==3.1.0
+Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.0.36
+Flask-Cors==5.0.0
+PyJWT==2.10.1
+bcrypt==4.2.1
 pydantic==2.10.4
-pydantic-settings==2.7.1
 email-validator==2.2.0
 python-dotenv==1.0.1
-passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
-python-jose[cryptography]==3.3.0
-python-multipart==0.0.20

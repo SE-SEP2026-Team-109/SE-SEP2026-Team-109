@@ -33,5 +33,5 @@ const route = useRoute(), u = computed(me), reason = ref(''), err = ref(''), ask
 const r = computed(() => state.requests.find(x => x.id === route.params.requestId && x.mentorId === u.value.id))
 const s = computed(() => userById(r.value.studentId))
 const attached = computed(() => state.goals.filter(g => g.studentId === r.value.studentId && g.visibility === 'all'))
-function decideIt() { const to = ask.value; ask.value = null; err.value = decide(r.value.id, u.value.id, to, to === 'rejected' ? reason.value.trim() : '') || ''; if (!err.value) toast(`Request ${to}`) }
+async function decideIt() { const to = ask.value; ask.value = null; err.value = (await decide(r.value.id, u.value.id, to, to === 'rejected' ? reason.value.trim() : '')) || ''; if (!err.value) toast(`Request ${to}`) }
 </script>

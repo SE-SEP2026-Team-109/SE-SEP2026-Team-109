@@ -14,10 +14,10 @@
 </template>
 <script setup>
 import { ref, computed } from 'vue'
-import { me, addTodo, toggleTodo, removeTodo } from '../../composables/useStore'
+import { me, addTodo, toggleTodo, removeTodo, userTodos } from '../../composables/useStore'
 import PageHeader from '../../components/PageHeader.vue'
 import AccountExtras from '../../components/AccountExtras.vue'
 import SuggestTagModal from '../../components/SuggestTagModal.vue'
-const u = computed(me), todos = computed(() => u.value.todos || []), task = ref(''), err = ref(''), tag = ref(false)
+const u = computed(me), todos = computed(() => userTodos(u.value.id)), task = ref(''), err = ref(''), tag = ref(false)
 const add = () => { err.value = addTodo(u.value.id, task.value) || ''; if (!err.value) task.value = '' }
 </script>

@@ -1,219 +1,118 @@
-from app.models.enums import StudentType, VerificationStatus
-from app.models.user import Mentor, Student
+"""C1 Auth - US-01 (register and sign in with role-based access)."""
+
+from tests.conftest import auth
+
+STUDENT = {"email": "new.student@ds.study.iitm.ac.in", "password": "Secret123", "role": "student",
+           "name": "New Student", "username": "new_student", "course": "data_science_and_applications",
+           "courselevel": "bsc_degree", "interests": ["Data Science"]}
+MENTOR = {"email": "alum@example.com", "password": "Secret123", "role": "mentor", "name": "New Mentor",
+          "username": "new_mentor", "designation": "Analyst", "company": "Acme", "capacity": 2,
+          "support_types": ["Resume review"], "expertise": ["Data Science"]}
 
 
-def test_register_creates_user(client):
-    response = client.post(
-        "/api/auth/register",
-        json={
-            "email": "student@study.iitm.ac.in",
-            "password": "password123",
-            "role": "student",
-            "course": "data_science_and_applications",
-        },
-    )
-    assert response.status_code == 201
-    body = response.json()
-    assert body["email"] == "student@study.iitm.ac.in"
-    assert body["role"] == "student"
-    assert "password" not in body
+def test_health(client):
+    assert client.get("/api/health").get_json() == {"status": "ok"}
 
 
-def test_register_rejects_duplicate_email(client):
-    payload = {
-        "email": "dup@study.iitm.ac.in",
-        "password": "password123",
-        "role": "student",
-        "course": "data_science_and_applications",
-    }
-    client.post("/api/auth/register", json=payload)
-    response = client.post("/api/auth/register", json=payload)
-    assert response.status_code == 400
+def test_student_registration_creates_profile_and_hides_password(seeded):
+    r = seeded.post("/api/auth/register", json=STUDENT)
+    assert r.status_code == 201
+    body = r.get_json()
+    assert body["role"] == "student" and body["student"]["course"] == "data_science_and_applications"
+    assert [t["name"] for t in body["tags"]] == ["Data Science"]
+    assert "password" not in body and "password" not in str(body)
 
 
-def test_register_rejects_duplicate_username(client):
-    payload = {
-        "email": "user1@study.iitm.ac.in",
-        "password": "password123",
-        "role": "student",
-        "course": "data_science_and_applications",
-        "username": "sameuser",
-    }
-    client.post("/api/auth/register", json=payload)
-    response = client.post(
-        "/api/auth/register",
-        json={**payload, "email": "user2@study.iitm.ac.in"},
-    )
-    assert response.status_code == 400
+def test_student_must_use_iitm_email(seeded):
+    r = seeded.post("/api/auth/register", json={**STUDENT, "email": "someone@gmail.com"})
+    assert r.status_code == 400
+    assert "study.iitm.ac.in" in r.get_json()["error"]["message"]
 
 
-def test_register_requires_course_for_student(client):
-    response = client.post(
-        "/api/auth/register",
-        json={"email": "nocourse@study.iitm.ac.in", "password": "password123", "role": "student"},
-    )
-    assert response.status_code == 400
-    assert "Course is required" in response.json()["detail"]
+def test_password_needs_letters_and_numbers(seeded):
+    for bad in ["short1", "allletters", "12345678"]:
+        r = seeded.post("/api/auth/register", json={**STUDENT, "password": bad})
+        assert r.status_code == 400, bad
 
 
-def test_register_rejects_invalid_course_enum(client):
-    response = client.post(
-        "/api/auth/register",
-        json={
-            "email": "badcourse@study.iitm.ac.in",
-            "password": "password123",
-            "role": "student",
-            "course": "DS",
-        },
-    )
-    assert response.status_code == 422
+def test_duplicate_email_and_username(seeded):
+    assert seeded.post("/api/auth/register", json=STUDENT).status_code == 201
+    assert seeded.post("/api/auth/register", json={**STUDENT, "username": "other_one"}).status_code == 409
+    assert seeded.post("/api/auth/register", json={**STUDENT, "email": "x@ds.study.iitm.ac.in"}).status_code == 409
 
 
-def test_register_creates_student_row_with_submitted_fields(client, db_session):
-    response = client.post(
-        "/api/auth/register",
-        json={
-            "email": "fulldetails@study.iitm.ac.in",
-            "password": "password123",
-            "role": "student",
-            "course": "electronic_systems",
-            "courselevel": "bs_degree",
-            "student_type": "dual_degree",
-            "rollno": "24f1002112",
-            "careergoal": "Become a data engineer",
-        },
-    )
-    assert response.status_code == 201
-    user_id = response.json()["id"]
-
-    student = db_session.get(Student, user_id)
-    assert student is not None
-    assert student.course.value == "electronic_systems"
-    assert student.courselevel.value == "bs_degree"
-    assert student.type == StudentType.dual_degree
-    assert student.rollno == "24f1002112"
-    assert student.careergoal == "Become a data engineer"
+def test_coordinator_and_admin_cannot_self_register(seeded):
+    r = seeded.post("/api/auth/register", json={**STUDENT, "role": "admin"})
+    assert r.status_code == 400
 
 
-def test_register_student_type_defaults_to_standalone(client, db_session):
-    response = client.post(
-        "/api/auth/register",
-        json={
-            "email": "defaulttype@study.iitm.ac.in",
-            "password": "password123",
-            "role": "student",
-            "course": "aeronautics_and_space_technology",
-        },
-    )
-    assert response.status_code == 201
-    student = db_session.get(Student, response.json()["id"])
-    assert student.type == StudentType.standalone
+def test_mentor_registration_pending_and_admin_notified(seeded):
+    r = seeded.post("/api/auth/register", json=MENTOR)
+    assert r.status_code == 201
+    m = r.get_json()["mentor"]
+    assert m["veri_status"] == "pending" and m["pause"] is False and m["support_types"] == ["Resume review"]
+    admin = auth(seeded, "admin@mentorconnect.demo")
+    notes = seeded.get("/api/notifications", headers=admin).get_json()
+    assert any("New Mentor" in n["message"] for n in notes)
 
 
-def test_register_requires_capacity_for_mentor(client):
-    response = client.post(
-        "/api/auth/register",
-        json={"email": "nocapacity@mentorconnect.in", "password": "password123", "role": "mentor"},
-    )
-    assert response.status_code == 400
-    assert "Capacity is required" in response.json()["detail"]
+def test_mentor_capacity_required_and_limited(seeded):
+    no_cap = {k: v for k, v in MENTOR.items() if k != "capacity"}
+    assert seeded.post("/api/auth/register", json=no_cap).status_code == 400
+    assert seeded.post("/api/auth/register", json={**MENTOR, "capacity": 11}).status_code == 400
+    assert seeded.post("/api/auth/register", json={**MENTOR, "capacity": 0}).status_code == 400
 
 
-def test_register_creates_mentor_row_with_submitted_fields(client, db_session):
-    response = client.post(
-        "/api/auth/register",
-        json={
-            "email": "mentorfull@mentorconnect.in",
-            "password": "password123",
-            "role": "mentor",
-            "capacity": 5,
-            "designation": "Senior Engineer",
-            "company": "Acme Corp",
-            "experience": 7.5,
-            "bio": "Happy to help with careers in data.",
-            "level_completed": "bs_degree",
-            "year_completed": 2019,
-        },
-    )
-    assert response.status_code == 201
-    user_id = response.json()["id"]
-
-    mentor = db_session.get(Mentor, user_id)
-    assert mentor is not None
-    assert mentor.capacity == 5
-    assert mentor.designation == "Senior Engineer"
-    assert mentor.company == "Acme Corp"
-    assert mentor.experience == 7.5
-    assert mentor.level_completed.value == "bs_degree"
-    assert mentor.year_completed == 2019
+def test_unapproved_tag_rejected_at_registration(seeded):
+    r = seeded.post("/api/auth/register", json={**STUDENT, "interests": ["UX Design"]})  # suggested, not approved
+    assert r.status_code == 400
 
 
-def test_register_mentor_defaults_to_pending_verification_and_not_paused(client, db_session):
-    response = client.post(
-        "/api/auth/register",
-        json={"email": "pendingmentor@mentorconnect.in", "password": "password123", "role": "mentor", "capacity": 2},
-    )
-    assert response.status_code == 201
-    mentor = db_session.get(Mentor, response.json()["id"])
-    assert mentor.veri_status == VerificationStatus.pending
-    assert mentor.pause is False
+def test_login_success_and_me(seeded):
+    h = auth(seeded, "student@mentorconnect.demo")
+    me = seeded.get("/api/auth/me", headers=h).get_json()
+    assert me["email"] == "student@mentorconnect.demo" and me["role"] == "student"
 
 
-def test_login_returns_token_for_valid_credentials(client):
-    client.post(
-        "/api/auth/register",
-        json={"email": "mentor@mentorconnect.in", "password": "password123", "role": "mentor", "capacity": 3},
-    )
-    response = client.post(
-        "/api/auth/login",
-        data={"username": "mentor@mentorconnect.in", "password": "password123"},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["token_type"] == "bearer"
-    assert body["access_token"]
+def test_login_accepts_form_fields_for_old_client(seeded):
+    r = seeded.post("/api/auth/login", data={"username": "student@mentorconnect.demo", "password": "Demo1234"})
+    assert r.status_code == 200 and r.get_json()["token_type"] == "bearer"
 
 
-def test_login_rejects_wrong_password(client):
-    client.post(
-        "/api/auth/register",
-        json={
-            "email": "wrongpw@study.iitm.ac.in",
-            "password": "password123",
-            "role": "student",
-            "course": "data_science_and_applications",
-        },
-    )
-    response = client.post(
-        "/api/auth/login",
-        data={"username": "wrongpw@study.iitm.ac.in", "password": "nope"},
-    )
-    assert response.status_code == 401
+def test_wrong_password_and_unknown_email(seeded):
+    assert seeded.post("/api/auth/login", json={"email": "student@mentorconnect.demo", "password": "nope1234"}).status_code == 401
+    assert seeded.post("/api/auth/login", json={"email": "ghost@x.com", "password": "Demo1234"}).status_code == 401
 
 
-def test_me_requires_valid_token(client):
-    register = client.post(
-        "/api/auth/register",
-        json={
-            "email": "me@study.iitm.ac.in",
-            "password": "password123",
-            "role": "student",
-            "course": "data_science_and_applications",
-        },
-    )
-    assert register.status_code == 201
-
-    login = client.post(
-        "/api/auth/login",
-        data={"username": "me@study.iitm.ac.in", "password": "password123"},
-    )
-    token = login.json()["access_token"]
-
-    response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 200
-    assert response.json()["email"] == "me@study.iitm.ac.in"
+def test_missing_and_invalid_token(seeded):
+    assert seeded.get("/api/auth/me").status_code == 401
+    assert seeded.get("/api/auth/me", headers={"Authorization": "Bearer not-a-jwt"}).status_code == 401
 
 
-def test_me_rejects_missing_token(client):
-    response = client.get("/api/auth/me")
-    assert response.status_code == 401
+def test_expired_token_rejected(seeded_app):
+    from app.security import create_access_token
+    seeded_app.config["JWT_EXPIRE_MINUTES"] = -1
+    with seeded_app.test_request_context():
+        token, _ = create_access_token(1, "admin")
+    r = seeded_app.test_client().get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 401 and "expired" in r.get_json()["error"]["message"]
+
+
+def test_blocked_user_cannot_log_in_or_use_token(seeded_app):
+    from app.extensions import db
+    from app.models import User, UserStatus
+    c = seeded_app.test_client()
+    h = auth(c, "student@mentorconnect.demo")
+    with seeded_app.app_context():
+        u = db.session.query(User).filter_by(email="student@mentorconnect.demo").one()
+        u.status = UserStatus.deactive
+        db.session.commit()
+    assert c.post("/api/auth/login", json={"email": "student@mentorconnect.demo", "password": "Demo1234"}).status_code == 403
+    assert c.get("/api/auth/me", headers=h).status_code == 401
+
+
+def test_change_password(seeded):
+    h = auth(seeded, "student@mentorconnect.demo")
+    assert seeded.post("/api/auth/change-password", headers=h, json={"current_password": "wrong", "new_password": "NewPass123"}).status_code == 400
+    assert seeded.post("/api/auth/change-password", headers=h, json={"current_password": "Demo1234", "new_password": "NewPass123"}).status_code == 200
+    auth(seeded, "student@mentorconnect.demo", "NewPass123")

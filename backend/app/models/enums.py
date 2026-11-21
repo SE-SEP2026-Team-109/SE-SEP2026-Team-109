@@ -1,6 +1,16 @@
-"""Enumerations shared by the SQLAlchemy models (mirrors the project DBML schema)."""
+"""Enumerations used by the models.
+
+Ported from the FastAPI ``app/models/enums.py`` (which mirrors the team's DBML
+schema). Changes are marked "CHANGE" and recorded in docs/decisions.md.
+"""
 
 import enum
+from datetime import datetime, timezone
+
+
+def utcnow() -> datetime:
+    """Naive UTC 'now'. All timestamps are stored in UTC and sent to the frontend with a 'Z' suffix."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class UserRole(str, enum.Enum):
@@ -64,6 +74,7 @@ class RequestSource(str, enum.Enum):
 
 
 class TrackGoalStatus(str, enum.Enum):
+    todo = "todo"  # CHANGE: added (M2 minutes, Meeting 7; also added on the team's FastAPI 'goals' branch)
     in_progress = "in_progress"
     done = "done"
     delete = "delete"
@@ -75,6 +86,7 @@ class SessionStatus(str, enum.Enum):
     rescheduled = "rescheduled"
     cancelled = "cancelled"
     completed = "completed"
+    declined = "declined"  # CHANGE: added so a declined booking is distinguishable from a cancellation
 
 
 class GoalVisibility(str, enum.Enum):
@@ -111,3 +123,8 @@ class MentorshipStatus(str, enum.Enum):
     active = "active"
     inactive = "inactive"
     pending = "pending"
+
+
+class FeedbackKind(str, enum.Enum):  # CHANGE: new - frontend has session and final feedback
+    session = "session"
+    final = "final"

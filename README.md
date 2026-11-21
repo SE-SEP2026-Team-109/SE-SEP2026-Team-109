@@ -22,36 +22,38 @@ Students nearing graduation face big career choices and often have no one to ask
 
 ## 🚀 Quick start
 
-You need Python 3.10+ and Node.js 18+. Open two terminals.
+You need **Python 3.10+** and **Node.js 18+**. Open two terminals.
 
-**1. Backend**
+**1. Backend (Flask API)**
 ```bash
 cd backend
-python3 -m venv venv && source venv/bin/activate    # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+python -m venv venv
+venv\Scripts\activate                 # macOS/Linux: source venv/bin/activate
+pip install -r requirements-dev.txt
+copy .env.example .env                # macOS/Linux: cp .env.example .env  (then set SECRET_KEY)
+python run.py                         # http://127.0.0.1:5000/api/health
 ```
 
-**2. Frontend**
+**2. Frontend (Vue 3)**
 ```bash
 cd frontend
 npm install
-npm run dev                                          # http://localhost:5173
+npm run dev                           # http://localhost:5173  (calls to /api are proxied to Flask)
 ```
 
-Demo data is created on first start. To reset it, stop the backend and run `rm -f instance/mentor.db mentor.db`.
+Demo data is created on first start in `backend/instance/mentorconnect.db`.
+To reset it: `flask --app app reset-db --yes` (inside `backend`, venv active). **This deletes all data.**
 
-## 🎬 Try it in 2 minutes
+## 🎬 Try it in 3 minutes
 
-All demo passwords are `demo1234`.
+All demo passwords are `Demo1234`. The login page also has a one-click demo student button.
 
 | Step | Sign in as | Do this |
 |---|---|---|
-| 1 | `aarav@study.iitm.ac.in` (student) | Open **Mentors**, filter by Data Science, send a request to Priya (50+ characters) |
-| 2 | `priya@mentorconnect.in` (mentor) | Open **Requests**, accept it, then open **Capacity** and see the limit enforced |
-| 3 | `aarav@study.iitm.ac.in` | Open **Messages**, send a note, then log a **Session** with an action item |
-| 4 | `kavya@mentorconnect.in` (coordinator) | Open **Insights** and read the supply and demand table |
-| 5 | `admin@mentorconnect.in` (admin) | Open **Admin**, verify or deactivate a user, update a report |
+| 1 | `student@mentorconnect.demo` (student) | Open **Mentors**, filter by career area, send a request to Neha Kulkarni (50+ characters) |
+| 2 | `neha.kulkarni@alumni.demo` (mentor) | Open **Requests**, accept it: the student's email appears and capacity updates |
+| 3 | `student@mentorconnect.demo` | **Requests**: Neha accepted, the pending request to Priya was closed by **System**; check **Alerts** |
+| 4 | `admin@mentorconnect.demo` (admin) | **Users**: verify a newly registered mentor; **Content**: approve a suggested tag |
 
 Mentors who register themselves stay hidden from students until an admin verifies them. Students must register with an address ending in `study.iitm.ac.in`.
 
@@ -104,15 +106,23 @@ Mentors who register themselves stay hidden from students until an admin verifie
 - Every status change is logged with who did it (`System` for expiry).
 - Account deletion shows its effects first, then anonymises data after 30 days.
 
+> **Build status (Sprint 1 / Milestone 3):** everything for US-01 to US-08 runs on the Flask API and
+> database and is tested. Goals, availability, sessions, action items, feedback, reports, account
+> deletion and coordinator matching still work **in the browser only** (data kept in localStorage)
+> until their Sprint 2 APIs are built. See [docs/traceability.md](docs/traceability.md).
+
+
 ## 🏗 How it fits together
 
 ```mermaid
 flowchart LR
     S[Student] & M[Mentor] & C[Coordinator] & A[Admin] --> UI[Vue 3 app]
-    UI -- "/api, JWT" --> API[Flask REST API]
-    API --> DB[(SQLite via SQLAlchemy)]
-    API --> N[In-app notifications]
-    API --> H[Status history]
+    UI -- "/api + JWT" --> R[Flask blueprints]
+    R --> SV[Services: rules, transactions]
+    SV --> RP[Repositories / SQLAlchemy models]
+    RP --> DB[(SQLite)]
+    SV --> N[In-app notifications]
+    SV --> H[Request status history]
 ```
 
 <details>
@@ -122,32 +132,10 @@ flowchart LR
 stateDiagram-v2
     [*] --> pending
     pending --> accepted: mentor accepts
-    pending --> rejected: mentor declines
-    pending --> withdrawn: student withdraws
-    pending --> expired: 14 days pass
-    pending --> closed: admin deactivates a user
-```
-</details>
-
-<details>
-<summary><b>Database (13 tables)</b></summary>
-
-`User`, `Profile`, `Req`, `Hist`, `Mentorship`, `Message`, `Note`, `Goal`, `Slot`, `Sess`, `Item`, `Feedback`, `Report`.
-
-```mermaid
-erDiagram
-    USER ||--o| PROFILE : has
-    USER ||--o{ REQ : sends
-    REQ ||--o{ HIST : logs
-    USER ||--o{ MENTORSHIP : joins
-    MENTORSHIP ||--o{ MESSAGE : contains
-    MENTORSHIP ||--o{ SESS : has
-    SESS ||--o{ ITEM : "action items"
-    MENTORSHIP ||--o{ FEEDBACK : receives
-    USER ||--o{ GOAL : sets
-    USER ||--o{ SLOT : offers
-    USER ||--o{ NOTE : receives
-    USER ||--o{ REPORT : files
+    pending --> rejected: mentor declines (optional reason)
+    pending --> withdrawn: student withdraws / System when matched elsewhere
+    pending --> expired: 14 days pass (System)
+    pending --> closed_by_admin: admin blocks a user (Sprint 2)
 ```
 </details>
 
@@ -156,28 +144,44 @@ erDiagram
 
 | Area | Technology |
 |---|---|
-| Backend | Python, Flask, Flask-SQLAlchemy, PyJWT |
-| Database | SQLite now, PostgreSQL-compatible |
-| Auth | JWT, 120-minute expiry |
+| Backend | Python, Flask 3, Flask-SQLAlchemy (SQLAlchemy 2), Pydantic validation, PyJWT, bcrypt |
+| Database | SQLite (PostgreSQL-compatible models) |
+| Auth | JWT, 120-minute expiry, role and participant guards |
 | Frontend | Vue 3, Vue Router, Vite |
-| Tests | pytest |
+| Tests | pytest (53 backend tests) |
 
 ```
-backend/   app.py, test_app.py, test_more.py, requirements.txt
-frontend/  index.html, vite.config.js, src/ (main.js, App.vue, api.js, views/)
-docs/      diagrams, Gantt, Kanban, minutes, API YAML, reports
+backend/   Flask app: app/ (models, schemas, repositories, services, routes), tests/, run.py
+frontend/  Vue app: src/api.js (API client), src/composables/ (store + adapters), src/pages/
+docs/      architecture, API reference, components, frontend integration, testing, traceability, decisions, handover
+legacy/fastapi_backend/  earlier FastAPI implementation by the team (reference only)
 ```
 </details>
 
 ## 🧪 Tests
 
 ```bash
-cd backend && source venv/bin/activate && pytest -q
+cd backend
+venv\Scripts\python -m pytest          # macOS/Linux: venv/bin/python -m pytest
 ```
 
-17 tests cover sign-up rules, request limits, capacity, expiry, accept and message flow, profiles, goals, sessions, availability, feedback, reports, deletion, deactivation and coordinator matching.
+53 tests cover sign-up rules, login and tokens, roles, profiles, tags, the directory, request limits,
+capacity, expiry, accept/reject/withdraw, mentorship ending, notifications and privacy (404 for others' records).
+Results and the end-to-end browser test: [docs/testing.md](docs/testing.md).
+
 
 ## 📚 Project docs
+
+| Document | Contents |
+|---|---|
+| [docs/handover.md](docs/handover.md) | Start here: beginner guide, install, demo script, how to continue |
+| [docs/architecture.md](docs/architecture.md) | System, layers, auth flow, database tables |
+| [docs/backend-components.md](docs/backend-components.md) | C1–C16: files, functions, rules, status |
+| [docs/api-reference.md](docs/api-reference.md) | Every endpoint: method, roles, body, response, errors |
+| [docs/frontend-integration.md](docs/frontend-integration.md) | Page → API map, how mock data was replaced, JWT in the browser |
+| [docs/testing.md](docs/testing.md) | Test cases, results, bugs fixed, what is untested |
+| [docs/traceability.md](docs/traceability.md) | User stories and acceptance criteria → components → code → tests |
+| [docs/decisions.md](docs/decisions.md) | Deviations, conflicts resolved, open questions |
 
 <details>
 <summary><b>User stories (16)</b></summary>
@@ -216,14 +220,6 @@ cd backend && source venv/bin/activate && pytest -q
 Keep your exported diagrams in `docs/`: `gantt-chart.png`, `kanban-board.png`, `er-diagram.png`, `class-diagram.png`.
 
 Scrum schedule and minutes go in `docs/scrum-minutes.md`. Issues, pull requests and code review screenshots go in `docs/`.
-</details>
-
-<details>
-<summary><b>Where the build stands</b></summary>
-
-All 16 stories have working backend endpoints and tests. Pages exist for sign-in, search, requests, capacity, messages, sessions, profile, goals, alerts, account, availability, insights and admin.
-
-No page yet for mentor feedback, the mentees list, coordinator matching and the request timeline. Those work through the API only.
 </details>
 
 ## 👥 Team

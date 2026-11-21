@@ -1,183 +1,219 @@
 import { reactive, watch } from 'vue'
 import { seed } from '../data/mock'
-import { apiLogin, apiMe, apiRegister, apiGetProfile, apiUpdateProfile } from '../api'
-import { COURSE_BY_DEGREE, COURSE_LEVEL_BY_PROGRAMME, STUDENT_TYPE_BY_EMPLOYMENT, DEGREE_BY_COURSE, PROGRAMME_BY_COURSE_LEVEL, EMPLOYMENT_BY_STUDENT_TYPE } from '../utils/helpers'
-const KEY = 'mentorconnect_demo_v4'
-const TOKEN_KEY = 'mentorconnect_token'
-// Disabled: mock data used to be loaded from localStorage; will come from the backend API instead.
-function load() { /* try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.users && s.sessions) return s } catch (e) { ignore corrupt data } */ return seed() }
+import {
+  ApiError, getToken, setToken, setUnauthorizedHandler, apiLogin, apiMe, apiRegister, apiUpdateProfile, apiSetMyTags,
+  apiChangePassword, apiTags, apiAdminTags, apiSuggestTag, apiAdminCreateTag, apiAdminUpdateTag, apiMentors, apiRequests,
+  apiCreateRequest, apiWithdraw, apiDecide, apiMentoring, apiNotifications, apiMarkRead, apiMarkAllRead, apiAdminUsers,
+  apiVerifyMentor
+} from '../api'
+import { toUser, toRequest, toMentorship, toNotification, toTag } from './adapters'
+import { COURSE_BY_DEGREE, COURSE_LEVEL_BY_PROGRAMME, STUDENT_TYPE_BY_EMPLOYMENT } from '../utils/helpers'
+
+/* ============================================================================
+   HOW DATA WORKS NOW (Sprint 1 integration)
+   - Users, profiles, tags, mentor directory, requests, mentorships and notifications come
+     from the Flask API and are saved in the SQLite database. `state` is only an in-memory
+     copy (cache) of what the server returned, refreshed after every change.
+   - Features whose APIs are Sprint 2 (goals, availability, sessions, action items, feedback,
+     reports, coordinator groups, to-dos) still work in the browser only. Their data is kept in
+     localStorage under LOCAL_KEY so it survives a refresh. See docs/frontend-integration.md.
+   ============================================================================ */
+const LOCAL_KEY = 'mentorconnect_local_v1'
+const LOCAL_SLICES = ['goals', 'availability', 'sessions', 'feedback', 'platformFeedback', 'reports', 'groups', 'messages', 'audit', 'criteria', 'todos']
+const SERVER_SLICES = { users: [], requests: [], mentorships: [], notifications: [], tags: [] }
+function emptyLocal() {
+  const s = seed()
+  // Sprint 2 data starts empty for real accounts (the old mock rows pointed at mock-only users).
+  return { goals: [], availability: [], sessions: [], feedback: [], platformFeedback: [], reports: [], groups: {}, messages: [], audit: [], criteria: s.criteria, todos: {} }
+}
+function load() {
+  let local = emptyLocal()
+  try { const saved = JSON.parse(localStorage.getItem(LOCAL_KEY)); if (saved && typeof saved === 'object') local = { ...local, ...saved } } catch (e) { /* ignore corrupt data */ }
+  return { sessionId: null, ready: false, loading: false, ...structuredClone(SERVER_SLICES), ...local }
+}
 export const state = reactive(load())
-// Disabled: state used to be persisted to localStorage; will be persisted via the backend API instead.
-// watch(state, () => { try { localStorage.setItem(KEY, JSON.stringify(state)) } catch (e) { storage unavailable } }, { deep: true })
-// Disabled: used to clear the persisted mock data store from localStorage.
-export const resetDemo = () => { /* localStorage.removeItem(KEY) */ location.href = location.pathname }
+watch(() => LOCAL_SLICES.map(k => state[k]), () => {
+  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(Object.fromEntries(LOCAL_SLICES.map(k => [k, state[k]])))) } catch (e) { /* storage unavailable */ }
+}, { deep: true })
+export const resetDemo = () => { try { localStorage.removeItem(LOCAL_KEY) } catch (e) { /* ignore */ } location.href = location.pathname }
 
 export const toasts = reactive([])
 export function toast(msg, type = 'ok') { const t = { id: Math.random(), msg, type }; toasts.push(t); setTimeout(() => toasts.splice(toasts.indexOf(t), 1), 3500) }
 
 export const DAY = 864e5, MAX_PENDING = 3, EXPIRY_DAYS = 14, RETENTION_DAYS = 30, EDIT_WINDOW = 15 * 60 * 1000
 const uid = p => p + Math.random().toString(36).slice(2, 8)
-const today0 = () => new Date(new Date().toDateString()).getTime()
 export const me = () => state.users.find(u => u.id === state.sessionId)
 export const userById = id => state.users.find(u => u.id === id) || { id, name: 'Unknown user', role: '', email: '' }
 export const live = u => u.active !== false && !u.purged
 // A mentor is visible to students only when profile is complete, admin-verified and the account is live.
 export const mentors = () => state.users.filter(u => u.role === 'mentor' && u.title && u.verified && live(u))
 export const activeMentees = id => state.mentorships.filter(m => m.mentorId === id && m.active)
-export const openSlots = m => (m.paused ? 0 : Math.max(0, m.capacity - activeMentees(m.id).length))
+// The server tells us how many mentees each mentor has (students cannot see other students' mentorships).
+export const activeCount = m => (m.activeCount ?? activeMentees(m.id).length)
+export const openSlots = m => (m.paused ? 0 : Math.max(0, m.capacity - activeCount(m)))
 export const pendingOf = sid => state.requests.filter(r => r.studentId === sid && r.status === 'pending')
-export const notify = (userId, text, link) => state.notifications.unshift({ id: uid('n'), userId, text, link, read: false, at: Date.now() })
+// Local-only notification (used by Sprint 2 browser-only features). Server notifications replace these on refresh.
+export const notify = (userId, text, link) => state.notifications.unshift({ id: uid('n'), userId, text, link, read: false, at: Date.now(), local: true })
 const log = (actor, text) => state.audit.unshift({ id: uid('au'), at: Date.now(), actor: typeof actor === 'string' ? actor : actor.name, text })
 export const myMentorships = uidv => state.mentorships.filter(m => m.active && (m.studentId === uidv || m.mentorId === uidv))
 export const mentorshipOf = (a, b) => state.mentorships.find(m => m.active && ((m.studentId === a && m.mentorId === b) || (m.studentId === b && m.mentorId === a)))
 export const aliasOf = id => 'Student #' + (state.users.filter(u => u.role === 'student').findIndex(u => u.id === id) + 1)
 export const relayEmail = id => 'student-' + [...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7).toString(36) + '@relay.mentorconnect.demo'
 export const fmtDT = t => new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+const errText = e => (e instanceof ApiError ? e.message : (e && e.message) || 'Something went wrong. Please try again.')
 
-/* ---------- accounts ----------
-   Identity (email/password/role) is authenticated against the FastAPI backend;
-   the rest of the profile fields stay in the local mock store for the demo UI. */
-function syncLocalUser(backendUser) {
-  let u = state.users.find(x => x.id === backendUser.id)
-  if (!u) {
-    const defaults = backendUser.role === 'student' ? { programme: '', interests: [], needs: '', skills: [] }
-      : backendUser.role === 'mentor' ? { title: '', company: '', years: 0, industry: '', bio: '', expertise: [], support: [], capacity: 2, paused: false, verified: false }
-        : {}
-    u = { id: backendUser.id, role: backendUser.role, ...defaults }
-    state.users.push(u)
-  }
-  Object.assign(u, { role: backendUser.role, name: backendUser.name || u.name || backendUser.email, email: backendUser.email, username: backendUser.username || u.username || '' })
-  return u
+/* ---------- loading data from the server ---------- */
+// Insert or update a user in the cache. A user's own record is never replaced by a less complete copy.
+function upsertUser(dto) {
+  if (!dto) return null
+  const fresh = toUser(dto)
+  const i = state.users.findIndex(u => u.id === fresh.id)
+  if (i < 0) { state.users.push(fresh); return fresh }
+  const old = state.users[i]
+  if (old.id === state.sessionId && !fresh.email) return old
+  Object.assign(old, fresh)
+  return old
 }
+async function loadRequests() {
+  const list = await apiRequests()
+  list.forEach(r => { upsertUser(r.student); upsertUser(r.mentor) })
+  state.requests = list.map(toRequest)
+}
+async function loadMentorships() {
+  const list = await apiMentoring()
+  list.forEach(m => { upsertUser(m.student); upsertUser(m.mentor) })
+  state.mentorships = list.map(toMentorship)
+}
+async function loadNotifications() {
+  const id = state.sessionId
+  state.notifications = (await apiNotifications()).map(n => toNotification(n, id))
+}
+async function loadTags(admin) { state.tags = (await (admin ? apiAdminTags() : apiTags())).map(toTag) }
+async function loadMe() { const u = upsertUser(await apiMe()); state.sessionId = u.id; return u }
+
+// Loads everything the signed-in role needs. Called after login, on page refresh and after changes.
+export async function refresh() {
+  const u = me(); if (!u) return
+  const jobs = [loadNotifications(), loadTags(u.role === 'admin'), loadMe()]
+  if (u.role === 'student' || u.role === 'coordinator' || u.role === 'admin') jobs.push(apiMentors().then(r => r.items.forEach(upsertUser)))
+  if (u.role === 'admin') jobs.push(apiAdminUsers().then(list => list.forEach(upsertUser)))
+  jobs.push(loadRequests(), loadMentorships())
+  const results = await Promise.allSettled(jobs)
+  const failed = results.find(r => r.status === 'rejected')
+  if (failed) toast(errText(failed.reason), 'err')
+}
+
+// Runs once when the app starts: if a saved token is still valid, restore the session.
+export async function initSession() {
+  setUnauthorizedHandler(message => {
+    if (!state.sessionId) return
+    clearServerState(); setToken(null)
+    toast(message || 'Your session has expired. Please sign in again.', 'err')
+    location.hash = '#/login'
+  })
+  if (getToken()) {
+    try { await loadMe(); await refresh() } catch (e) { setToken(null); clearServerState() }
+  }
+  // The registration page needs the approved tag list before anyone signs in (GET /api/tags is public).
+  if (!state.sessionId) { try { await loadTags(false) } catch (e) { /* page still works; tags just appear empty */ } }
+  state.ready = true
+}
+function clearServerState() {
+  const tags = state.tags.filter(t => t.status === 'approved') // public list, still useful on the login/register pages
+  Object.assign(state, structuredClone(SERVER_SLICES)); state.sessionId = null; state.tags = tags
+}
+
+/* ---------- accounts (C1 Auth, C2 Profile) ---------- */
 export async function login(email, password) {
   try {
-    const { access_token } = await apiLogin(email.trim(), password)
-    localStorage.setItem(TOKEN_KEY, access_token)
-    const backendUser = await apiMe(access_token)
-    const u = syncLocalUser(backendUser)
-    if (u.active === false) return { error: u.deletionRequestedAt ? 'This account is scheduled for deletion.' : 'This account has been deactivated. Contact the programme admin.' }
-    state.sessionId = u.id; return { user: u }
-  } catch (e) { return { error: e.message || 'Email or password is incorrect.' } }
+    const res = await apiLogin(email.trim(), password)
+    setToken(res.access_token)
+    clearServerState()
+    const u = upsertUser(res.user); state.sessionId = u.id
+    await refresh()
+    return { user: me() }
+  } catch (e) { setToken(null); return { error: errText(e) } }
 }
-export const logout = () => { state.sessionId = null; localStorage.removeItem(TOKEN_KEY) }
+export const logout = () => { setToken(null); clearServerState() }
 
-// Maps a backend ProfileRead payload onto the local (mock-store) user object the rest of the UI reads from.
-function applyProfile(u, p) {
-  Object.assign(u, { name: p.name || u.name, username: p.username || u.username, phone: p.phone })
-  if (p.student) {
-    Object.assign(u, {
-      rollNo: p.student.rollno || u.rollNo,
-      degree: DEGREE_BY_COURSE[p.student.course] || u.degree,
-      programme: p.student.courselevel ? (PROGRAMME_BY_COURSE_LEVEL[p.student.courselevel] || u.programme) : 'Foundation',
-      needs: p.student.mneeds ?? u.needs,
-      employment: EMPLOYMENT_BY_STUDENT_TYPE[p.student.type] || u.employment
-    })
-  }
-}
-// Refreshes the signed-in user's profile from the backend (silently keeps local data if it is unreachable).
-export async function loadProfile() {
-  const token = localStorage.getItem(TOKEN_KEY), u = me()
-  if (!token || !u) return
-  try { applyProfile(u, await apiGetProfile(token)) } catch (e) { /* keep local data */ }
-}
-// Persists editable profile fields to the backend, then merges fields the UI only keeps locally (e.g. interests, skills).
-export async function saveProfile(body, localOnly = {}) {
-  const token = localStorage.getItem(TOKEN_KEY), u = me()
-  if (!token || !u) return 'You must be signed in to save your profile.'
+// Kept for pages that call it (Abhinava's API version); now simply re-reads the profile.
+export async function loadProfile() { if (me()) { try { await loadMe() } catch (e) { /* keep cached copy */ } } }
+// Saves profile fields, then (optionally) the tag selection. Returns an error message or null.
+export async function saveProfile(body, tagNames) {
+  if (!me()) return 'You must be signed in to save your profile.'
   try {
-    applyProfile(u, await apiUpdateProfile(token, body))
-    Object.assign(u, localOnly)
+    upsertUser(await apiUpdateProfile(body))
+    if (tagNames) upsertUser(await apiSetMyTags(tagNames))
     return null
-  } catch (e) { return e.message || 'Could not save your profile.' }
+  } catch (e) { return errText(e) }
 }
+// Mentor capacity (1-10) and pause toggle (US-04).
+export async function saveMentorSettings(patch) { return saveProfile({ mentor: patch }) }
+
 export async function register({ name, email, password, role, extra = {} }) {
   const un = (extra.username || '').trim().toLowerCase()
   if (!usernameOk(un)) return 'Choose a username of 3 to 20 lowercase letters, numbers or underscores.'
-  if (usernameTaken(un)) return 'That username is already taken.'
-  const payload = { email: email.trim(), password, role, username: un, name: name.trim(), phone: extra.phone }
+  const payload = { email: email.trim(), password, role, username: un, name: name.trim(), phone: extra.phone || null }
   if (role === 'student') {
     Object.assign(payload, {
-      rollno: extra.rollNo, courselevel: COURSE_LEVEL_BY_PROGRAMME[extra.programme],
-      course: COURSE_BY_DEGREE[extra.degree], student_type: STUDENT_TYPE_BY_EMPLOYMENT[extra.employment]
+      rollno: extra.rollNo || null, courselevel: COURSE_LEVEL_BY_PROGRAMME[extra.programme] || null,
+      course: COURSE_BY_DEGREE[extra.degree] || null, student_type: STUDENT_TYPE_BY_EMPLOYMENT[extra.employment] || null
     })
   } else if (role === 'mentor') {
     Object.assign(payload, {
-      designation: extra.title, company: extra.company, experience: extra.years, bio: extra.bio,
-      capacity: extra.capacity, level_completed: COURSE_LEVEL_BY_PROGRAMME[extra.completed], year_completed: extra.gradYear
+      designation: extra.title, company: extra.company, experience: Number(extra.years) || 0, bio: extra.bio,
+      industry: extra.industry || null, career_area: extra.careerArea || null, support_types: extra.support || [],
+      expertise: extra.expertise || [], capacity: Number(extra.capacity), linkedin: extra.linkedin || null,
+      level_completed: COURSE_LEVEL_BY_PROGRAMME[extra.completed] || null, year_completed: extra.gradYear ? Number(extra.gradYear) : null
     })
   }
-  let backendUser
-  try {
-    backendUser = await apiRegister(payload)
-  } catch (e) { return e.message || 'Could not create the account.' }
-  const base = { id: backendUser.id, role, name: name.trim(), email: email.trim(), password, username: un }
-  state.users.push(role === 'student' ? { ...base, programme: '', interests: [], needs: '', skills: [], ...extra, username: un }
-    : { ...base, title: '', company: '', years: 0, industry: '', bio: '', expertise: [], support: [], capacity: 2, paused: false, verified: false, ...extra, username: un })
-  if (role === 'mentor') state.users.filter(u => u.role === 'admin').forEach(a => notify(a.id, `New mentor ${name.trim()} is waiting for verification`, '/admin/dashboard?tab=users'))
-  return null
+  try { await apiRegister(payload); return null } catch (e) { return errText(e) }
 }
 
-/* ---------- requests ---------- */
-function move(r, to, actor, reason = '') { r.history.push({ from: r.status, to, actor, at: Date.now() }); r.status = to; if (reason) r.reason = reason }
-export function submitRequest(sid, mid, message) {
-  const m = userById(mid), msg = message.trim()
-  if (!m || m.role !== 'mentor' || !m.verified) return 'Mentor not found.'
-  if (msg.length < 50 || msg.length > 1500) return 'Your message must be between 50 and 1500 characters.'
-  if (state.mentorships.some(m => m.active && m.studentId === sid)) return 'You already have a mentor. Only one active mentorship is allowed at a time.'
-  if (pendingOf(sid).length >= MAX_PENDING) return `You already have ${MAX_PENDING} pending requests. Withdraw one or wait for a reply.`
-  if (pendingOf(sid).some(r => r.mentorId === mid)) return 'You already have a pending request to this mentor.'
-  if (openSlots(m) < 1) return m.paused ? 'This mentor has paused new requests.' : 'This mentor has no open slots.'
-  const now = Date.now()
-  const r = { id: uid('r'), studentId: sid, mentorId: mid, message: msg, status: 'pending', reason: '', createdAt: now, expiresAt: now + EXPIRY_DAYS * DAY, history: [{ from: null, to: 'pending', actor: 'Student', at: now }] }
-  state.requests.unshift(r); notify(mid, `New mentoring request from ${userById(sid).name}`, `/mentor/requests/${r.id}`); return null
+/* ---------- requests (C5) and mentorships (C6) ---------- */
+// The server enforces every rule (50-1500 chars, 3 pending, capacity, one mentor...). We only show its message.
+export async function submitRequest(sid, mid, message) {
+  try { await apiCreateRequest(mid, message.trim()); await Promise.all([loadRequests(), apiMentors().then(r => r.items.forEach(upsertUser))]); return null } catch (e) { return errText(e) }
 }
-export function withdraw(id, sid) {
-  const r = state.requests.find(x => x.id === id && x.studentId === sid)
-  if (!r || r.status !== 'pending') return 'Only pending requests can be withdrawn.'
-  move(r, 'withdrawn', 'Student'); notify(r.mentorId, `${userById(sid).name} withdrew a request`, '/mentor/requests'); return null
+export async function withdraw(id) {
+  try { await apiWithdraw(id); await loadRequests(); return null } catch (e) { return errText(e) }
 }
 function startMentorship(studentId, mentorId, by) {
-  state.mentorships.push({ id: uid('ms'), studentId, mentorId, active: true, since: Date.now(), by })
-  // System rule: when a mentorship starts, the student's goals become visible to that mentor only.
+  // Browser-only: used by coordinator matching until the C15 matching API exists (Sprint 2).
+  state.mentorships.push({ id: uid('ms'), studentId, mentorId, active: true, since: Date.now(), by, local: true })
   state.goals.filter(g => g.studentId === studentId).forEach(g => { g.visibility = 'mentor' })
 }
-export function decide(id, mid, to, reason = '') {
-  const r = state.requests.find(x => x.id === id && x.mentorId === mid)
-  if (!r) return 'Request not found.'
-  if (r.status !== 'pending') return 'This request has already been decided.'
-  if (reason.length > 500) return 'Reason is limited to 500 characters.'
-  if (to === 'accepted') {
-    // Capacity is re-checked at accept time (409 conflict if the last place was just taken).
-    if (activeMentees(mid).length >= userById(mid).capacity) return '409 Conflict: your capacity is full, so this request cannot be accepted. Raise your capacity first.'
-    if (state.mentorships.some(m => m.active && m.studentId === r.studentId)) return '409 Conflict: this student already has a mentor, so the request cannot be accepted.'
-    startMentorship(r.studentId, mid, 'Mentor')
-    state.requests.filter(x => x.studentId === r.studentId && x.id !== r.id && x.status === 'pending').forEach(x => { move(x, 'withdrawn', 'System'); notify(x.mentorId, `${userById(r.studentId).name} is now matched with another mentor, so their request was closed`, '/mentor/requests') })
-  }
-  move(r, to, 'Mentor', reason); notify(r.studentId, `${userById(mid).name} ${to} your request`, '/student/requests'); return null
+// to = 'accepted' | 'rejected'; reason is optional (US-08).
+export async function decide(id, mid, to, reason = '') {
+  try {
+    await apiDecide(id, to === 'accepted' ? 'accept' : 'reject', reason.trim())
+    if (to === 'accepted') {
+      const r = state.requests.find(x => x.id === id)
+      if (r) state.goals.filter(g => g.studentId === r.studentId).forEach(g => { g.visibility = 'mentor' })
+    }
+    await Promise.all([loadRequests(), loadMentorships(), loadMe()])
+    return null
+  } catch (e) { return errText(e) }
 }
-// Mock expiry: a real system would use a scheduled job (US-09). Here it runs on each navigation.
-export function runExpiry() {
-  const now = Date.now()
-  state.requests.forEach(r => { if (r.status === 'pending' && r.expiresAt < now) { move(r, 'expired', 'System'); notify(r.studentId, 'A mentoring request expired after 14 days', '/student/requests'); notify(r.mentorId, 'A pending request expired', '/mentor/requests') } })
-  runReminders()
-  runPurge()
+/* ---------- notifications (C13) ---------- */
+export async function markRead(n) {
+  if (n.read) return
+  n.read = true
+  if (!n.local) { try { await apiMarkRead(n.id) } catch (e) { n.read = false; toast(errText(e), 'err') } }
 }
-// Automatic reminder (replaces the coordinator's manual button): a request pending for more than 7 days nudges the mentor once.
-export function runReminders() {
-  const now = Date.now(); let n = 0
-  state.requests.forEach(r => { if (r.status === 'pending' && !r.remindedAt && now - r.createdAt > 7 * DAY) { r.remindedAt = now; n++; notify(r.mentorId, `A student request has been waiting ${Math.floor((now - r.createdAt) / DAY)} days. Please reply when you can.`, `/mentor/requests/${r.id}`) } })
-  if (n) log('System', `Sent ${n} automatic reminder(s) for stalled requests`)
+export async function markAllRead() {
+  state.notifications.filter(n => n.userId === state.sessionId).forEach(n => { n.read = true })
+  try { await apiMarkAllRead() } catch (e) { toast(errText(e), 'err'); await loadNotifications() }
 }
-// Mock account purge: anonymises accounts whose deletion was requested more than RETENTION_DAYS ago.
-export function runPurge(force = false) {
-  let n = 0
-  state.users.filter(u => u.deletionRequestedAt && !u.purged && (force || Date.now() - u.deletionRequestedAt > RETENTION_DAYS * DAY)).forEach(u => {
-    Object.assign(u, { name: 'Deleted user', email: `deleted-${u.id}@anonymised.invalid`, password: '', bio: '', needs: '', purged: true })
-    state.requests.filter(r => r.studentId === u.id || r.mentorId === u.id).forEach(r => { r.message = '[removed]' }); n++
-  })
-  if (n) log('System', `Anonymised ${n} account(s) after the retention period`)
-  return n
-}
+
+// Request expiry (US-09) now runs on the SERVER (lazily before every request call, and via
+// `flask run-jobs`). The router still calls runExpiry() on navigation; it is kept as a no-op
+// hook so Sprint 2 browser-only jobs can be added back without touching the router.
+export function runExpiry() { /* server-side now - see backend/app/services/jobs.py */ }
+// Stuck-request reminders are a C16 Sprint 2 server job; nothing runs in the browser any more.
+export function runReminders() { return 0 }
+// Account purge is a C14/C16 Sprint 2 server job. Returns 0 so the admin "purge" button shows "nothing to purge".
+export function runPurge() { return 0 }
 
 /* ---------- goals ---------- */
 export const VIS = [['me', 'Private (only me)'], ['all', 'All mentors (anonymous)'], ['mentor', 'Only my mentor']]
@@ -306,27 +342,26 @@ export function editFeedback(id, actor, patch) {
 export function sendPlatformFeedback(text) { if (text.trim().length < 10) return 'Write at least 10 characters.'; state.platformFeedback.unshift({ id: uid('pf'), text: text.trim(), at: Date.now() }); return null } // no author stored: anonymous
 export const avgScore = f => { const v = Object.values(f.scores); return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : '–' }
 
-/* ---------- tags, criteria ---------- */
+/* ---------- tags, criteria (C3) ---------- */
 export const approvedTags = () => state.tags.filter(t => t.status === 'approved').map(t => t.name)
-export function suggestTag(name) {
+export async function suggestTag(name) {
   const n = name.trim(); if (n.length < 2) return 'Tag names need at least 2 characters.'
-  if (state.tags.some(t => t.name.toLowerCase() === n.toLowerCase())) return 'That tag already exists or is awaiting approval.'
-  state.tags.push({ id: uid('t'), name: n, status: 'suggested' }); state.users.filter(u => u.role === 'admin').forEach(a => notify(a.id, `Tag suggested: ${n}`, '/admin/dashboard?tab=content')); return null
+  try { const t = await apiSuggestTag(n); if (me()?.role === 'admin') state.tags.push(toTag(t)); return null } catch (e) { return errText(e) }
 }
-export function addTag(name) {
+export async function addTag(name) {
   const n = name.trim(); if (n.length < 2) return 'Tag names need at least 2 characters.'
-  if (state.tags.some(t => t.name.toLowerCase() === n.toLowerCase())) return 'That tag already exists.'
-  state.tags.push({ id: uid('t'), name: n, status: 'approved' }); return null
+  try { await apiAdminCreateTag(n); await loadTags(true); return null } catch (e) { return errText(e) }
 }
+export async function approveTag(id) { try { await apiAdminUpdateTag(id, { action: 'approve' }); await loadTags(true); return null } catch (e) { return errText(e) } }
+export async function rejectTag(id) { try { await apiAdminUpdateTag(id, { action: 'reject' }); await loadTags(true); return null } catch (e) { return errText(e) } }
+// Browser-only until a merge API exists (open decision D-07): it changes the cached view, not the database.
 export function mergeTags(fromId, toId) {
   const a = state.tags.find(t => t.id === fromId), b = state.tags.find(t => t.id === toId); if (!a || !b || a === b) return 'Choose two different tags.'
-  const swap = arr => [...new Set(arr.map(x => (x === a.name ? b.name : x)))]
-  state.users.forEach(u => { if (u.expertise) u.expertise = swap(u.expertise); if (u.interests) u.interests = swap(u.interests) })
-  state.goals.forEach(g => { g.tags = swap(g.tags || []) }); state.tags.splice(state.tags.indexOf(a), 1)
-  log('Admin', `Merged tag "${a.name}" into "${b.name}"`); return null
+  return 'Merging tags is not connected to the server yet (planned for Sprint 2). Edit or reject the duplicate instead.'
 }
 
-/* ---------- moderation, accounts ---------- */
+/* ---------- moderation, accounts (C12/C14: Sprint 2, browser-only for now) ---------- */
+function move(r, to, actor, reason = '') { r.history.push({ from: r.status, to, actor, at: Date.now() }); r.status = to; if (reason) r.reason = reason }
 export function submitReport(reporterId, reportedId, category, description, evidence) {
   if (!reportedId) return 'Choose who you are reporting.'
   if (reportedId === reporterId) return 'You cannot report yourself.'
@@ -342,7 +377,10 @@ export function setActive(userId, active, admin) {
   })
   log(admin, `${active ? 'Reactivated' : 'Blocked'} ${u.name}`)
 }
-export function verifyMentor(id, admin) { const u = userById(id); if (!u.title) return 'This mentor has not completed their profile yet.'; u.verified = true; notify(id, 'Your mentor profile is verified and now visible to students', '/mentor/profile'); log(admin, `Verified mentor ${u.name}`); return null }
+// Mentor verification is saved on the server (admin only). The server also notifies the mentor.
+export async function verifyMentor(id, admin) {
+  try { upsertUser(await apiVerifyMentor(id, 'verified')); log(admin, `Verified mentor ${userById(id).name}`); return null } catch (e) { return errText(e) }
+}
 export function requestDeletion(id) {
   const u = userById(id)
   state.requests.filter(r => r.status === 'pending' && (r.studentId === id || r.mentorId === id)).forEach(r => { move(r, 'withdrawn', 'System'); notify(r.studentId === id ? r.mentorId : r.studentId, 'A pending request was closed because an account was deleted', '/notifications') })
@@ -380,20 +418,20 @@ export function toggleItem(sessionId, actorRole, itemId) {
 /* ---------- account details ---------- */
 export const usernameOk = v => /^[a-z0-9_]{3,20}$/.test(v)
 export const usernameTaken = (v, exceptId) => state.users.some(u => u.id !== exceptId && (u.username || '').toLowerCase() === v.toLowerCase())
-export function setUsername(id, v) {
+export async function setUsername(id, v) {
   const n = v.trim().toLowerCase()
   if (!usernameOk(n)) return 'Username must be 3 to 20 characters: lowercase letters, numbers or underscores.'
-  if (usernameTaken(n, id)) return 'That username is already taken.'
-  userById(id).username = n; return null
+  return saveProfile({ username: n })
 }
-export function changePassword(id, current, next) {
-  const u = userById(id)
-  if (u.password !== current) return 'Your current password is incorrect.'
+export async function changePassword(id, current, next) {
   if (!(next.length >= 8 && /[A-Za-z]/.test(next) && /\d/.test(next))) return 'The new password needs at least 8 characters, with letters and numbers.'
   if (next === current) return 'Choose a password that is different from the current one.'
-  u.password = next; return null
+  try { await apiChangePassword(current, next); return null } catch (e) { return errText(e) }
 }
-export const setPhoto = (id, dataUrl) => { userById(id).photo = dataUrl || '' }
-export function addTodo(id, text) { const u = userById(id); if (text.trim().length < 2) return 'Write a short task.'; (u.todos || (u.todos = [])).push({ id: uid('t'), text: text.trim(), done: false }); return null }
-export const toggleTodo = (id, tid) => { const t = (userById(id).todos || []).find(x => x.id === tid); if (t) t.done = !t.done }
-export const removeTodo = (id, tid) => { const u = userById(id); u.todos = (u.todos || []).filter(x => x.id !== tid) }
+export async function setPhoto(id, dataUrl) { const err = await saveProfile({ photo: dataUrl || '' }); if (err) toast(err, 'err'); return err }
+// Coordinator to-do list: browser-only (no table in the M2 design; open decision D-06).
+const todosOf = id => (state.todos[id] || (state.todos[id] = []))
+export const userTodos = id => state.todos[id] || []
+export function addTodo(id, text) { if (text.trim().length < 2) return 'Write a short task.'; todosOf(id).push({ id: uid('t'), text: text.trim(), done: false }); return null }
+export const toggleTodo = (id, tid) => { const t = todosOf(id).find(x => x.id === tid); if (t) t.done = !t.done }
+export const removeTodo = (id, tid) => { state.todos[id] = todosOf(id).filter(x => x.id !== tid) }

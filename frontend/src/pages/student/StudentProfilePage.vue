@@ -47,9 +47,10 @@ async function save() {
   if (new Set(names).size !== names.length) e.push('Each skill can be listed only once.')
   errs.value = e
   if (e.length) return
-  const body = { name: f.name.trim(), student: { course: COURSE_BY_DEGREE[f.degree], courselevel: COURSE_LEVEL_BY_PROGRAMME[f.programme] ?? undefined, mneeds: f.needs.trim() } }
-  const localOnly = { interests: [...i], needs: f.needs.trim(), skills: sk.map(k => ({ name: k.name.trim(), level: k.level, want: !!k.want })) }
-  const err = await saveProfile(body, localOnly)
+  // Saved on the server: profile fields first, then the interest tags (C2 + C3).
+  const level = COURSE_LEVEL_BY_PROGRAMME[f.programme]
+  const body = { name: f.name.trim(), student: { course: COURSE_BY_DEGREE[f.degree], ...(level ? { courselevel: level } : { clear_courselevel: true }), mneeds: f.needs.trim(), skills: sk.map(k => ({ name: k.name.trim(), level: k.level, want: !!k.want })) } }
+  const err = await saveProfile(body, [...i])
   if (err) { errs.value = [err]; return }
   edit.value = false; toast('Profile saved')
 }

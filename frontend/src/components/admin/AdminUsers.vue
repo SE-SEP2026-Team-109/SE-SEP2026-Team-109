@@ -22,7 +22,7 @@ import ConfirmModal from '../ConfirmModal.vue'
 const q = ref(''), role = ref(''), ask = ref(null)
 const users = computed(() => state.users.filter(u => u.role !== 'admin' && (!role.value || u.role === role.value) && (u.name + u.email).toLowerCase().includes(q.value.toLowerCase())))
 const st = u => u.purged ? ['Anonymised', ''] : u.deletionRequestedAt ? ['Deletion requested', 'pending'] : u.active === false ? ['Blocked', 'rejected'] : u.role === 'mentor' && !u.verified ? ['Unverified', 'pending'] : ['Active', 'accepted']
-const verify = x => { const e = verifyMentor(x.id, me()); e ? toast(e, 'err') : toast(x.name + ' verified') }
+const verify = async x => { const e = await verifyMentor(x.id, me()); e ? toast(e, 'err') : toast(x.name + ' verified') }
 const toggle = () => { setActive(ask.value.id, ask.value.active === false, me()); toast(ask.value.name + (ask.value.active === false ? ' unblocked' : ' blocked')); ask.value = null }
 const purge = () => { const n = runPurge(true); toast(n ? n + ' account(s) anonymised' : 'No accounts are awaiting purge') }
 </script>

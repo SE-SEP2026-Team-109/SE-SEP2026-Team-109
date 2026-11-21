@@ -14,8 +14,8 @@ import { ref } from 'vue'
 import { me, changePassword, toast } from '../composables/useStore'
 import PasswordField from './PasswordField.vue'
 const cur = ref(''), nw = ref(''), cf = ref(''), err = ref('')
-function save() {
-  err.value = !cur.value ? 'Enter your current password.' : nw.value !== cf.value ? 'The new passwords do not match.' : changePassword(me().id, cur.value, nw.value) || ''
+async function save() {
+  err.value = !cur.value ? 'Enter your current password.' : nw.value !== cf.value ? 'The new passwords do not match.' : (await changePassword(me().id, cur.value, nw.value)) || ''
   if (!err.value) { toast('Password updated'); cur.value = nw.value = cf.value = '' }
 }
 </script>

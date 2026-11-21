@@ -36,7 +36,7 @@
 </template>
 <script setup>
 import { computed } from 'vue'
-import { state, me, userById, activeMentees, openSlots, toast, DAY, sessionsOf, fmtDT } from '../../composables/useStore'
+import { state, me, userById, activeMentees, openSlots, toast, DAY, sessionsOf, fmtDT, saveMentorSettings } from '../../composables/useStore'
 import { fmt, greeting } from '../../utils/helpers'
 import Icon from '../../components/Icon.vue'
 import Avatar from '../../components/Avatar.vue'
@@ -48,6 +48,7 @@ const fut = computed(() => state.availability.filter(a => a.mentorId === u.value
 const days = r => Math.floor((Date.now() - r.createdAt) / DAY)
 const gl = sid => state.goals.filter(g => g.studentId === sid), gcount = sid => gl(sid).length, gdone = sid => gl(sid).filter(g => g.status === 'done').length
 const gp = sid => (gcount(sid) ? Math.round(gdone(sid) / gcount(sid) * 100) : 0)
-const setCap = v => { u.value.capacity = Number(v); toast('Capacity set to ' + v) }
-const pause = e => { u.value.paused = e.target.checked; toast(u.value.paused ? 'New requests paused' : 'Accepting requests again') }
+// Saved on the server (US-04). Lowering capacity never ends a current mentorship.
+const setCap = async v => { const err = await saveMentorSettings({ capacity: Number(v) }); err ? toast(err, 'err') : toast('Capacity set to ' + v) }
+const pause = async e => { const on = e.target.checked, err = await saveMentorSettings({ pause: on }); if (err) { e.target.checked = !on; toast(err, 'err') } else toast(on ? 'New requests paused' : 'Accepting requests again') }
 </script>

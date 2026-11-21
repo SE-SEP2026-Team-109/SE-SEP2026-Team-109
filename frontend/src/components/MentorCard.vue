@@ -17,9 +17,9 @@
 </template>
 <script setup>
 import { computed } from 'vue'
-import { state, me, openSlots, activeMentees } from '../composables/useStore'
+import { state, me, openSlots, activeMentees, activeCount } from '../composables/useStore'
 import Avatar from './Avatar.vue'
 import Icon from './Icon.vue'
 const props = defineProps({ m: Object, hits: { type: Array, default: () => [] } })
-const hasMentor = computed(() => state.mentorships.some(x => x.active && x.studentId === me().id)), free = computed(() => openSlots(props.m)), canReq = computed(() => free.value > 0 && !hasMentor.value), active = computed(() => activeMentees(props.m.id).length)
+const hasMentor = computed(() => state.mentorships.some(x => x.active && x.studentId === me().id)), free = computed(() => openSlots(props.m)), canReq = computed(() => free.value > 0 && !hasMentor.value), active = computed(() => activeCount(props.m))
 </script>
