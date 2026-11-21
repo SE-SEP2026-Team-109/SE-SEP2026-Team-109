@@ -1,0 +1,1 @@
+"""MentorConnect FastAPI application package."""
