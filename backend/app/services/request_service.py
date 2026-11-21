@@ -1,509 +1,198 @@
-"""Business logic for creating and managing mentoring requests."""
+"""C5 Requests: submit, list, view, withdraw, accept/reject, expire.
 
-from datetime import datetime, timedelta
+Ported from FastAPI ``services/request_service.py`` (Development branch). The
+business rules are the same; additions required by M1/M2 are marked ADDED:
+* ADDED status history for every change, with the actor (System when automatic) - M1 4.4, US-07, US-09.
+* ADDED notifications to the other party - US-06, US-13.
+* ADDED ``expires_on`` stored on the request - US-06.
+* ADDED reject reason optional - US-08 (FastAPI required it).
+* ADDED coordinators/admins can list requests WITHOUT message content - M2 C5, Meeting 5.
+* ADDED SQLite-safe locking of the mentor row on submit/accept - M1 edge case 1.
+"""
 
-from fastapi import HTTPException, status
-from sqlalchemy import func, update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from datetime import timedelta
 
-from app.models.enums import (
-    MentorshipStatus,
-    RequestSource,
-    RequestStatus,
-    UserRole,
-    UserStatus,
-    VerificationStatus,
+from flask import current_app
+
+from app import repositories as repo
+from app.errors import BadRequest, Conflict, Forbidden, NotFound
+from app.extensions import db
+from app.models import (
+    Mentorship, MentorshipStatus, Request, RequestSource, RequestStatus, RequestStatusHistory, User, UserRole,
+    UserStatus, VerificationStatus, utcnow,
 )
-from app.models.mentoring import (
-    Mentorship,
-    Request as MentoringRequest,
-)
-from app.models.user import Mentor, Student, User
+from app.services.notification_service import notify
 
-from app.schemas.requests import RequestCreate, RequestDecision
+ACTOR = {UserRole.student: "Student", UserRole.mentor: "Mentor", UserRole.coordinator: "Coordinator", UserRole.admin: "Admin"}
 
 
-REQUEST_EXPIRY_DAYS = 14
-MAX_PENDING_REQUESTS = 3
-SYSTEM_WITHDRAWAL_MESSAGE = (
-    "Closed automatically because the student accepted another mentor."
-)
+def move(req: Request, to: RequestStatus, actor: User | None, reason: str | None = None) -> None:
+    """The only place a request status changes, so history can never be skipped ("History writer")."""
+    db.session.add(RequestStatusHistory(
+        rid=req.id, from_status=req.status, to_status=to,
+        actor_id=actor.id if actor else None, actor_role=ACTOR[actor.role] if actor else "System",
+    ))
+    req.status = to
+    req.changed_on = utcnow()
+    if reason is not None:
+        req.mentor_response = reason
 
 
-def expire_old_requests(db: Session) -> None:
+def expire_due_requests() -> int:
+    """US-09: pending requests past ``expires_on`` become Expired (actor System) and both sides are told.
+
+    Called lazily before request operations and by the ``flask run-jobs`` command (C16).
     """
-    Mark pending requests older than 14 days as expired.
-
-    Expiry is calculated from the existing created_on column, so no
-    additional database column is required. This is a lazy expiry:
-    it runs whenever a request operation is performed.
-    """
-    expiry_time = datetime.utcnow() - timedelta(days=REQUEST_EXPIRY_DAYS)
-
-    db.query(MentoringRequest).filter(
-        MentoringRequest.status == RequestStatus.pending,
-        MentoringRequest.created_on <= expiry_time,
-    ).update(
-        {
-            MentoringRequest.status: RequestStatus.expired,
-            MentoringRequest.changed_on: datetime.utcnow(),
-        },
-        synchronize_session=False,
-    )
-
-    db.commit()
+    now = utcnow()
+    due = repo.pending_requests_past_expiry(now)
+    for req in due:
+        move(req, RequestStatus.expired, None)
+        notify(req.sid, "A mentoring request expired after 14 days without a reply", "/student/requests", req.id)
+        notify(req.mid, "A pending mentoring request expired", "/mentor/requests", req.id)
+    if due:
+        db.session.commit()
+    return len(due)
 
 
-def _get_student(db: Session, student_id: int) -> Student:
-    """Return an existing student profile or raise 404."""
-    student = db.query(Student).filter(Student.id == student_id).first()
-
-    if student is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student profile not found.",
-        )
-
-    user = db.query(User).filter(User.id == student_id).first()
-
-    if user is None or user.status != UserStatus.active:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student account not found or inactive.",
-        )
-
-    return student
+def _active_student(student_id: int):
+    user = repo.get_user(student_id)
+    if user is None or user.role != UserRole.student or user.student is None or user.status != UserStatus.active:
+        raise NotFound("Student not found.")
+    return user
 
 
-def _get_mentor(db: Session, mentor_id: int) -> Mentor:
-    """Return an existing verified mentor profile or raise an error."""
-    mentor = db.query(Mentor).filter(Mentor.id == mentor_id).first()
-
-    if mentor is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Mentor profile not found.",
-        )
-
-    user = db.query(User).filter(User.id == mentor_id).first()
-
-    if user is None or user.status != UserStatus.active:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Mentor account not found or inactive.",
-        )
-
-    if mentor.veri_status != VerificationStatus.verified:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This mentor is not verified.",
-        )
-
-    return mentor
+def _requestable_mentor(mentor_id: int):
+    user = repo.get_user(mentor_id)
+    if (user is None or user.role != UserRole.mentor or user.mentor is None or user.status != UserStatus.active
+            or user.mentor.veri_status != VerificationStatus.verified):
+        raise NotFound("Mentor not found.")
+    return user
 
 
-def _get_active_mentorship_count(db: Session, mentor_id: int) -> int:
-    """Count the mentor's currently active mentorships."""
-    return (
-        db.query(func.count(Mentorship.id))
-        .join(
-            MentoringRequest,
-            MentoringRequest.id == Mentorship.rid,
-        )
-        .filter(
-            MentoringRequest.mid == mentor_id,
-            Mentorship.status == MentorshipStatus.active,
-        )
-        .scalar()
-        or 0
-    )
-
-
-def create_request(
-    db: Session,
-    current_user: User,
-    data: RequestCreate,
-) -> MentoringRequest:
-    """
-    Create a student-originated or coordinator-assigned request.
-
-    Students create requests for themselves. Coordinators and admins
-    must provide the student_id they are assigning the request for.
-    """
-    expire_old_requests(db)
-
-    if current_user.role == UserRole.student:
-        if data.student_id is not None and data.student_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only create requests for yourself.",
-            )
-
-        student_id = current_user.id
-        assigned_by = None
-        request_source = RequestSource.student
-
-    elif current_user.role in (UserRole.coordinator, UserRole.admin):
-        if data.student_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="student_id is required for an assigned request.",
-            )
-
-        student_id = data.student_id
-        assigned_by = current_user.id
-        request_source = RequestSource.coordinator
-
+def create(actor: User, mentor_id: int, message: str, student_id: int | None = None) -> Request:
+    expire_due_requests()
+    if actor.role == UserRole.student:
+        if student_id not in (None, actor.id):
+            raise Forbidden("You can only create requests for yourself.")
+        student_id, source, assigned_by = actor.id, RequestSource.student, None
+    elif actor.role in (UserRole.coordinator, UserRole.admin):
+        if student_id is None:
+            raise BadRequest("student_id is required when assigning a request.")
+        source, assigned_by = RequestSource.coordinator, actor.id  # still needs mentor acceptance (M2 C5)
     else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not allowed to create mentoring requests.",
+        raise Forbidden("Mentors cannot create mentoring requests.")
+
+    student = _active_student(student_id)
+    mentor_user = _requestable_mentor(mentor_id)
+    try:
+        mentor = repo.lock_mentor(mentor_id)
+        if mentor.pause:
+            raise Conflict("This mentor has paused new requests.")
+        if repo.count_active_mentorships(mentor_id) >= mentor.capacity:
+            raise Conflict("This mentor has no open slots.")
+        if repo.active_mentorship_for_student(student_id):
+            raise Conflict("You already have a mentor. Only one active mentorship is allowed at a time.")
+        if repo.count_pending_requests(student_id) >= current_app.config["MAX_PENDING_REQUESTS"]:
+            raise Conflict("You already have 3 pending requests. Withdraw one or wait for a reply.")
+        if repo.pending_request_between(student_id, mentor_id):
+            raise Conflict("You already have a pending request to this mentor.")
+
+        now = utcnow()
+        req = Request(
+            sid=student_id, mid=mentor_id, student_message=message, req_source=source, assigned_by=assigned_by,
+            status=RequestStatus.pending, created_on=now,
+            expires_on=now + timedelta(days=current_app.config["REQUEST_EXPIRY_DAYS"]),
         )
+        db.session.add(req)
+        db.session.flush()
+        db.session.add(RequestStatusHistory(rid=req.id, from_status=None, to_status=RequestStatus.pending,
+                                            actor_id=actor.id, actor_role=ACTOR[actor.role]))
+        notify(mentor_id, f"New mentoring request from {student.name}", f"/mentor/requests/{req.id}", req.id)
+        if source == RequestSource.coordinator:
+            notify(student_id, f"The programme team suggested {mentor_user.name} as your mentor. Waiting for their reply.",
+                   "/student/requests", req.id)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return req
 
-    _get_student(db, student_id)
-    mentor = _get_mentor(db, data.mentor_id)
 
-    # A paused mentor cannot receive new requests.
-    if mentor.pause:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This mentor is currently paused.",
-        )
+def list_for(user: User, status: RequestStatus | None = None) -> list[Request]:
+    expire_due_requests()
+    query = db.session.query(Request)
+    if user.role == UserRole.student:
+        query = query.filter(Request.sid == user.id)
+    elif user.role == UserRole.mentor:
+        query = query.filter(Request.mid == user.id)
+    # coordinators and admins see all requests; request_dto strips the message for them
+    if status is not None:
+        query = query.filter(Request.status == status)
+    return query.order_by(Request.created_on.desc(), Request.id.desc()).all()
 
-    # Do not rely on the directory's displayed free-slot count.
-    # Capacity must be checked again when creating the request.
-    if _get_active_mentorship_count(db, mentor.id) >= mentor.capacity:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This mentor has no available slots.",
-        )
 
-    # A student who already has an active mentor cannot request another.
-    has_active_mentorship = (
-        db.query(Mentorship.id)
-        .join(
-            MentoringRequest,
-            MentoringRequest.id == Mentorship.rid,
-        )
-        .filter(
-            MentoringRequest.sid == student_id,
-            Mentorship.status == MentorshipStatus.active,
-        )
-        .first()
-        is not None
-    )
+def get_for(user: User, request_id: int) -> Request:
+    expire_due_requests()
+    req = repo.get_request(request_id)
+    if req is None:
+        raise NotFound("Request not found.")
+    if user.role in (UserRole.coordinator, UserRole.admin):
+        return req
+    if not ((user.role == UserRole.student and req.sid == user.id) or (user.role == UserRole.mentor and req.mid == user.id)):
+        raise NotFound("Request not found.")  # 404, not 403, so ids cannot be probed (M1 4.2)
+    return req
 
-    if has_active_mentorship:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="You already have an active mentorship.",
-        )
 
-    pending_count = (
-        db.query(func.count(MentoringRequest.id))
-        .filter(
-            MentoringRequest.sid == student_id,
-            MentoringRequest.status == RequestStatus.pending,
-        )
-        .scalar()
-        or 0
-    )
+def withdraw(user: User, request_id: int) -> Request:
+    expire_due_requests()
+    req = repo.get_request(request_id)
+    if req is None or user.role != UserRole.student or req.sid != user.id:
+        raise NotFound("Request not found.")
+    if req.status != RequestStatus.pending:
+        raise Conflict("Only pending requests can be withdrawn.")
+    move(req, RequestStatus.withdrawn, user)
+    notify(req.mid, f"{user.name} withdrew a mentoring request", "/mentor/requests", req.id)
+    db.session.commit()
+    return req
 
-    if pending_count >= MAX_PENDING_REQUESTS:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="You cannot have more than 3 pending requests.",
-        )
 
-    duplicate_request = (
-        db.query(MentoringRequest)
-        .filter(
-            MentoringRequest.sid == student_id,
-            MentoringRequest.mid == mentor.id,
-            MentoringRequest.status == RequestStatus.pending,
-        )
-        .first()
-    )
-
-    if duplicate_request:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="You already have a pending request for this mentor.",
-        )
-
-    request = MentoringRequest(
-        sid=student_id,
-        mid=mentor.id,
-        student_message=data.student_message,
-        assigned_by=assigned_by,
-        req_source=request_source,
-        status=RequestStatus.pending,
-    )
-
-    db.add(request)
+def decide(user: User, request_id: int, action: str, reason: str | None) -> Request:
+    expire_due_requests()
+    req = repo.get_request(request_id)
+    if req is None or user.role != UserRole.mentor or req.mid != user.id:
+        raise NotFound("Request not found.")
+    if req.status != RequestStatus.pending:
+        raise Conflict("This request has already been decided.")  # decided requests are terminal (US-08)
 
     try:
-        db.commit()
-        db.refresh(request)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The request could not be created because of a conflicting database change.",
-        )
+        if action == "reject":
+            move(req, RequestStatus.rejected, user, reason or "")
+            notify(req.sid, f"{user.name} declined your mentoring request", "/student/requests", req.id)
+            db.session.commit()
+            return req
 
-    return request
+        mentor = repo.lock_mentor(user.id)
+        if mentor.veri_status != VerificationStatus.verified:
+            raise Conflict("Your mentor profile is not verified yet.")
+        # Capacity is re-checked inside the accept transaction (409 if the last place was just taken).
+        if repo.count_active_mentorships(user.id) >= mentor.capacity:
+            raise Conflict("Your capacity is full, so this request cannot be accepted. Raise your capacity first.")
+        if repo.active_mentorship_for_student(req.sid):
+            raise Conflict("This student already has a mentor, so the request cannot be accepted.")
 
-
-def list_requests(
-    db: Session,
-    current_user: User,
-    request_status: RequestStatus | None = None,
-) -> list[MentoringRequest]:
-    """
-    List the authenticated student's requests or mentor's incoming requests.
-
-    Other roles cannot use this listing endpoint.
-    """
-    expire_old_requests(db)
-
-    query = db.query(MentoringRequest)
-
-    if current_user.role == UserRole.student:
-        query = query.filter(MentoringRequest.sid == current_user.id)
-
-    elif current_user.role == UserRole.mentor:
-        query = query.filter(MentoringRequest.mid == current_user.id)
-
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only students and mentors can view this request list.",
-        )
-
-    if request_status is not None:
-        query = query.filter(MentoringRequest.status == request_status)
-
-    return query.order_by(MentoringRequest.created_on.desc()).all()
-
-
-def get_request(
-    db: Session,
-    current_user: User,
-    request_id: int,
-) -> MentoringRequest:
-    """Retrieve a request only when the current user is a participant."""
-    expire_old_requests(db)
-
-    request = (
-        db.query(MentoringRequest)
-        .filter(MentoringRequest.id == request_id)
-        .first()
-    )
-
-    if request is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found.",
-        )
-
-    is_student = (
-        current_user.role == UserRole.student
-        and request.sid == current_user.id
-    )
-    is_mentor = (
-        current_user.role == UserRole.mentor
-        and request.mid == current_user.id
-    )
-
-    if not (is_student or is_mentor):
-        # Return 404 rather than revealing another user's request.
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found.",
-        )
-
-    return request
-
-
-def withdraw_request(
-    db: Session,
-    current_user: User,
-    request_id: int,
-) -> MentoringRequest:
-    """Allow a student to withdraw their own pending request."""
-    expire_old_requests(db)
-
-    request = (
-        db.query(MentoringRequest)
-        .filter(MentoringRequest.id == request_id)
-#        .with_for_update()
-        .first()
-    )
-
-    if request is None or request.sid != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found.",
-        )
-
-    if current_user.role != UserRole.student:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the requesting student can withdraw this request.",
-        )
-
-    if request.status != RequestStatus.pending:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only pending requests can be withdrawn.",
-        )
-
-    request.status = RequestStatus.withdrawn
-    request.mentor_response = "Withdrawn by student."
-
-    db.commit()
-    db.refresh(request)
-
-    return request
-
-
-def decide_request(
-    db: Session,
-    current_user: User,
-    request_id: int,
-    data: RequestDecision,
-) -> MentoringRequest:
-    """
-    Allow the assigned mentor to accept or reject a pending request.
-
-    Acceptance rechecks capacity, creates an active mentorship and
-    closes the student's other pending requests.
-    """
-    expire_old_requests(db)
-
-    request = (
-        db.query(MentoringRequest)
-        .filter(MentoringRequest.id == request_id)
-#        .with_for_update()
-        .first()
-    )
-
-    if request is None or request.mid != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Request not found.",
-        )
-
-    if current_user.role != UserRole.mentor:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the assigned mentor can decide this request.",
-        )
-
-    if request.status != RequestStatus.pending:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This request is no longer pending.",
-        )
-
-    if data.action == "reject":
-        request.status = RequestStatus.rejected
-        request.mentor_response = data.reason
-
-        db.commit()
-        db.refresh(request)
-        return request
-
-    # Acceptance: lock and re-fetch the mentor before checking capacity.
-    mentor = (
-        db.query(Mentor)
-        .filter(Mentor.id == request.mid)
-        .with_for_update()
-        .first()
-    )
-
-    if mentor is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Mentor profile not found.",
-        )
-
-    if mentor.pause:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="You cannot accept requests while your profile is paused.",
-        )
-
-    if mentor.veri_status != VerificationStatus.verified:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Your mentor profile is not verified.",
-        )
-
-    if _get_active_mentorship_count(db, mentor.id) >= mentor.capacity:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="You no longer have an available mentoring slot.",
-        )
-
-    # Recheck that the student has not acquired another active mentor.
-    existing_mentorship = (
-        db.query(Mentorship.id)
-        .join(
-            MentoringRequest,
-            MentoringRequest.id == Mentorship.rid,
-        )
-        .filter(
-            MentoringRequest.sid == request.sid,
-            Mentorship.status == MentorshipStatus.active,
-        )
-        .first()
-    )
-
-    if existing_mentorship:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This student already has an active mentorship.",
-        )
-
-    now = datetime.utcnow()
-
-    request.status = RequestStatus.accepted
-    request.mentor_response = data.reason
-
-    # An accepted request creates the actual mentoring relationship.
-    mentorship = Mentorship(
-        rid=request.id,
-        start=now,
-        status=MentorshipStatus.active,
-    )
-    db.add(mentorship)
-
-    # Close the student's other pending requests automatically.
-    db.query(MentoringRequest).filter(
-        MentoringRequest.sid == request.sid,
-        MentoringRequest.id != request.id,
-        MentoringRequest.status == RequestStatus.pending,
-    ).update(
-        {
-            MentoringRequest.status: RequestStatus.withdrawn,
-            MentoringRequest.mentor_response: SYSTEM_WITHDRAWAL_MESSAGE,
-            MentoringRequest.changed_on: now,
-        },
-        synchronize_session=False,
-    )
-
-    try:
-        db.commit()
-        db.refresh(request)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The request could not be accepted because of a conflicting database change.",
-        )
-
-    return request
-
+        now = utcnow()
+        move(req, RequestStatus.accepted, user, reason or "")
+        db.session.add(Mentorship(rid=req.id, start=now, status=MentorshipStatus.active))
+        # The student's other pending requests close as Withdrawn by System (M2 C5).
+        for other in repo.pending_requests_of_student(req.sid, exclude_id=req.id):
+            move(other, RequestStatus.withdrawn, None,
+                 "Closed automatically because the student was matched with another mentor.")
+            notify(other.mid, f"{req.student.user.name} is now matched with another mentor, so their request was closed",
+                   "/mentor/requests", other.id)
+        notify(req.sid, f"{user.name} accepted your mentoring request. You can now see each other's contact details.",
+               "/student/requests", req.id)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return req
