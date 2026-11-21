@@ -24,5 +24,5 @@ const tabs = ['all', 'pending', 'accepted', 'rejected', 'expired', 'withdrawn'],
 const mine = computed(() => state.requests.filter(r => r.studentId === me().id))
 const count = t => (t === 'all' ? mine.value.length : mine.value.filter(r => r.status === t).length)
 const shown = computed(() => (tab.value === 'all' ? mine.value : mine.value.filter(r => r.status === tab.value)))
-function doIt() { const e = withdraw(ask.value.id, me().id); e ? toast(e, 'err') : toast('Request withdrawn'); ask.value = null }
+async function doIt() { const id = ask.value.id; ask.value = null; const e = await withdraw(id); e ? toast(e, 'err') : toast('Request withdrawn') }
 </script>

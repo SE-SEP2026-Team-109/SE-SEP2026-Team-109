@@ -42,9 +42,9 @@ import Icon from '../components/Icon.vue'
 import Avatar from '../components/Avatar.vue'
 const router = useRouter(), route = useRoute(), user = computed(me)
 const NAV = {
-  student: [['/student/dashboard', 'Home', 'dashboard'], ['/student/mentors', 'Mentors', 'search'], ['/student/requests', 'Requests', 'send'], ['/student/goals', 'Goals', 'target'], ['/student/sessions', 'Sessions', 'calendar'], ['/student/feedback', 'Feedback', 'star'], ['/student/profile', 'Profile', 'user'], ['/account', 'Account', 'settings']],
-  mentor: [['/mentor/dashboard', 'Home', 'dashboard'], ['/mentor/requests', 'Requests', 'inbox'], ['/mentor/mentees', 'Mentees', 'users'], ['/mentor/sessions', 'Sessions', 'calendar'], ['/mentor/availability', 'Availability', 'clock'], ['/mentor/feedback', 'Feedback', 'star'], ['/mentor/profile', 'Profile', 'user'], ['/account', 'Account', 'settings']],
-  coordinator: [['/coordinator/dashboard', 'Insights', 'chart'], ['/coordinator/matching', 'Matching', 'users'], ['/coordinator/goals', 'Goals', 'target'], ['/coordinator/profile', 'Profile', 'user'], ['/account', 'Account', 'settings']],
+  student: [['/student/dashboard', 'Home', 'dashboard'], ['/student/mentors', 'Mentors', 'search'], ['/student/requests', 'Requests', 'send'], ['/student/goals', 'Goals', 'target'], ['/student/sessions', 'Sessions', 'calendar'], ['/student/feedback', 'Feedback', 'star'], ['/student/profile', 'Profile', 'user'], ['/account', 'User feedback', 'message']],
+  mentor: [['/mentor/dashboard', 'Home', 'dashboard'], ['/mentor/requests', 'Requests', 'inbox'], ['/mentor/mentees', 'Mentees', 'users'], ['/mentor/sessions', 'Sessions', 'calendar'], ['/mentor/availability', 'Availability', 'clock'], ['/mentor/feedback', 'Feedback', 'star'], ['/mentor/profile', 'Profile', 'user'], ['/account', 'User feedback', 'message']],
+  coordinator: [['/coordinator/dashboard', 'Insights', 'chart'], ['/coordinator/matching', 'Matching', 'users'], ['/coordinator/goals', 'Goals', 'target'], ['/coordinator/profile', 'Profile', 'user'], ['/account', 'User feedback', 'message']],
   admin: [['/admin/dashboard', 'Overview', 'chart'], ['/admin/dashboard?tab=users', 'Users', 'users'], ['/admin/dashboard?tab=content', 'Content', 'clipboard'], ['/admin/dashboard?tab=reports', 'Reports', 'shield']]
 }
 const roleLabel = computed(() => ({ student: 'Student', mentor: 'Mentor', coordinator: 'Coordinator', admin: 'Administrator' }[user.value?.role]))
@@ -53,10 +53,8 @@ const section = computed(() => { const p = route.path; const hit = nav.value.fin
 const unread = computed(() => (user.value ? state.notifications.filter(n => n.userId === user.value.id && !n.read).length : 0))
 const pend = computed(() => (user.value ? pendingOf(user.value.id).length : 0))
 const mentees = computed(() => (user.value ? activeMentees(user.value.id).length : 0))
-// Disabled: sidebar preference used to be read from localStorage; will come from the backend API instead.
-const compact = ref(window.innerWidth < 1000 /* (() => { try { const v = localStorage.getItem('mc_side'); return v === null ? window.innerWidth < 1000 : v === '1' } catch (e) { return false } })() */)
-// Disabled: used to save the sidebar collapsed/expanded preference to localStorage.
-const toggleSide = () => { compact.value = !compact.value /* ; try { localStorage.setItem('mc_side', compact.value ? '1' : '0') } catch (e) { storage unavailable } */ }
+const compact = ref((() => { try { const v = localStorage.getItem('mc_side'); return v === null ? window.innerWidth < 1000 : v === '1' } catch (e) { return false } })())
+const toggleSide = () => { compact.value = !compact.value; try { localStorage.setItem('mc_side', compact.value ? '1' : '0') } catch (e) { /* storage unavailable */ } }
 const quick = computed(() => {
   const r = user.value.role, id = user.value.id
   if (r === 'student') return [['/student/mentors', 'Find a mentor', 'search'], ['/student/requests', 'My requests', 'send', pend.value], ['/student/goals', 'Update goals', 'target'], ['/student/sessions', 'Request a session', 'calendar']]

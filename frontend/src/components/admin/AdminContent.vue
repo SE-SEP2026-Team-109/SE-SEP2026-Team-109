@@ -2,7 +2,7 @@
   <div class="grid two">
     <section class="card" aria-labelledby="tg"><h2 id="tg">Tags</h2>
       <h3 class="sub">Suggested <span class="count">{{ sug.length }}</span></h3><p v-if="!sug.length" class="muted">No suggestions waiting.</p>
-      <ul class="plain"><li v-for="t in sug" :key="t.id" class="row between"><b>{{ t.name }}</b><span class="row"><button class="btn sm" @click="t.status = 'approved'; toast('Tag approved')">Approve</button><button class="btn ghost sm" @click="rej(t)">Reject</button></span></li></ul>
+      <ul class="plain"><li v-for="t in sug" :key="t.id" class="row between"><b>{{ t.name }}</b><span class="row"><button class="btn sm" @click="approve(t)">Approve</button><button class="btn ghost sm" @click="rej(t)">Reject</button></span></li></ul>
       <h3 class="sub">Approved ({{ app.length }})</h3><p class="chips"><span v-for="t in app" :key="t.id">{{ t.name }}</span></p>
       <h3 class="sub">Merge duplicates</h3><div class="two-col"><div><label for="mf">Merge this tag</label><select id="mf" v-model="mf"><option value="">Select</option><option v-for="t in state.tags" :key="t.id" :value="t.id">{{ t.name }}</option></select></div>
         <div><label for="mt">Into</label><select id="mt" v-model="mt"><option value="">Select</option><option v-for="t in app" :key="t.id" :value="t.id">{{ t.name }}</option></select></div></div>
@@ -19,12 +19,13 @@
 </template>
 <script setup>
 import { ref, computed } from 'vue'
-import { state, userById, mergeTags, addTag, avgScore, VIS, toast } from '../../composables/useStore'
+import { state, userById, mergeTags, addTag, approveTag, rejectTag, avgScore, VIS, toast } from '../../composables/useStore'
 import { fmt } from '../../utils/helpers'
 const sug = computed(() => state.tags.filter(t => t.status === 'suggested')), app = computed(() => state.tags.filter(t => t.status === 'approved'))
 const mf = ref(''), mt = ref(''), merr = ref(''), nt = ref(''), terr = ref(''), lbl = { todo: 'To do', doing: 'In progress', done: 'Done' }
 const visLabel = v => (VIS.find(x => x[0] === v) || [0, v])[1]
-const rej = t => { state.tags.splice(state.tags.indexOf(t), 1); toast('Suggestion rejected') }
+const approve = async t => { const e = await approveTag(t.id); e ? toast(e, 'err') : toast('Tag approved') }
+const rej = async t => { const e = await rejectTag(t.id); e ? toast(e, 'err') : toast('Suggestion rejected') }
 const merge = () => { merr.value = mergeTags(mf.value, mt.value) || ''; if (!merr.value) { toast('Tags merged'); mf.value = mt.value = '' } }
-const newTag = () => { terr.value = addTag(nt.value) || ''; if (!terr.value) { toast('Tag added'); nt.value = '' } }
+const newTag = async () => { terr.value = (await addTag(nt.value)) || ''; if (!terr.value) { toast('Tag added'); nt.value = '' } }
 </script>

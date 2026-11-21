@@ -19,6 +19,6 @@ import { resizeImage } from '../utils/helpers'
 import Avatar from './Avatar.vue'
 import ChangePassword from './ChangePassword.vue'
 const u = computed(me), un = ref(u.value.username || ''), uerr = ref(''), perr = ref('')
-const saveUn = () => { uerr.value = setUsername(u.value.id, un.value) || ''; if (!uerr.value) toast('Username saved') }
-async function pick(e) { perr.value = ''; const f = e.target.files[0]; if (!f) return; try { setPhoto(u.value.id, await resizeImage(f)); toast('Photo updated') } catch (x) { perr.value = x.message } e.target.value = '' }
+const saveUn = async () => { uerr.value = (await setUsername(u.value.id, un.value)) || ''; if (!uerr.value) toast('Username saved') }
+async function pick(e) { perr.value = ''; const f = e.target.files[0]; if (!f) return; try { const e2 = await setPhoto(u.value.id, await resizeImage(f)); if (!e2) toast('Photo updated') } catch (x) { perr.value = x.message } e.target.value = '' }
 </script>

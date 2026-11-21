@@ -10,7 +10,7 @@
       <p class="hint">Mentors also see the goals you have opened to mentors on your profile, so there is no need to attach them.</p>
       <p v-if="pendingOf(u.id).length >= 3" class="note">You have reached the limit of 3 pending requests. Withdraw one to send another.</p>
       <p v-if="err" class="error" role="alert">{{ err }}</p>
-      <div class="row"><button class="btn" :disabled="pendingOf(u.id).length >= 3">Send request</button><router-link class="btn ghost" :to="`/student/mentors/${m.id}`">Cancel</router-link></div>
+      <div class="row"><button class="btn" :disabled="busy || pendingOf(u.id).length >= 3">{{ busy ? 'Sending…' : 'Send request' }}</button><router-link class="btn ghost" :to="`/student/mentors/${m.id}`">Cancel</router-link></div>
     </form>
   </template>
 </template>
@@ -21,5 +21,10 @@ import { me, userById, submitRequest, pendingOf, toast } from '../../composables
 const route = useRoute(), router = useRouter(), u = computed(me), msg = ref(''), err = ref('')
 const m = computed(() => { const x = userById(route.params.mentorId); return x && x.role === 'mentor' ? x : null })
 const ok = computed(() => msg.value.trim().length >= 50 && msg.value.trim().length <= 1500)
-function send() { err.value = submitRequest(u.value.id, m.value.id, msg.value) || ''; if (!err.value) { toast('Request sent to ' + m.value.name); router.push('/student/requests') } }
+const busy = ref(false)
+async function send() {
+  if (busy.value) return
+  busy.value = true; err.value = (await submitRequest(u.value.id, m.value.id, msg.value)) || ''; busy.value = false
+  if (!err.value) { toast('Request sent to ' + m.value.name); router.push('/student/requests') }
+}
 </script>

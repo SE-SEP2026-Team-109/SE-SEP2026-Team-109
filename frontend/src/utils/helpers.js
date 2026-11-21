@@ -15,7 +15,9 @@ export const STUDENT_TYPE_BY_EMPLOYMENT = { 'Studying only': 'standalone', 'Work
 // Reverse lookups used to render backend enum values back onto the UI's labels.
 export const DEGREE_BY_COURSE = Object.fromEntries(Object.entries(COURSE_BY_DEGREE).map(([k, v]) => [v, k]))
 export const PROGRAMME_BY_COURSE_LEVEL = Object.fromEntries(Object.entries(COURSE_LEVEL_BY_PROGRAMME).filter(([, v]) => v).map(([k, v]) => [v, k]))
-export const EMPLOYMENT_BY_STUDENT_TYPE = Object.fromEntries(Object.entries(STUDENT_TYPE_BY_EMPLOYMENT).map(([k, v]) => [v, k]))
+// 'Studying only' and 'Between jobs' both store as 'standalone'; show 'Studying only' when reading it back
+// (open decision D-05: add a separate value if the team wants to keep "between jobs").
+export const EMPLOYMENT_BY_STUDENT_TYPE = { ...Object.fromEntries(Object.entries(STUDENT_TYPE_BY_EMPLOYMENT).map(([k, v]) => [v, k])), standalone: 'Studying only' }
 // Shrinks a chosen photo to a small JPEG data URL so it is cheap to keep in the browser (mock) store.
 export const resizeImage = (file, max = 200) => new Promise((resolve, reject) => {
   if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) return reject(new Error('Choose a PNG, JPG or WebP image.'))
